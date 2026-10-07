@@ -1,0 +1,72 @@
+[
+  {
+    "id": "resc-2",
+    "date": "2026-10-08",
+    "dayName": "Thursday",
+    "time": "01:30 PM - 03:00 PM",
+    "room": "Lab 101",
+    "course": "CSE 3102 - DBMS Lab",
+    "batchSection": "CSE Batch 22 (Sec B)",
+    "teacher": "Lecturer Nabil",
+    "crName": "Tanvir",
+    "crKey": "CR-CSE-23",
+    "reason": "Extra lab repetition",
+    "createdAt": "2026-10-06T20:25:48.475Z"
+  },
+  {
+    "id": "resc-1",
+    "date": "2026-10-08",
+    "dayName": "Thursday",
+    "time": "10:00 AM - 11:30 AM",
+    "room": "Room 301",
+    "course": "CSE 3101 - Database Systems",
+    "batchSection": "CSE Batch 22 (Sec A)",
+    "teacher": "Dr. Sarah Connor",
+    "crName": "Rayhan",
+    "crKey": "CR-CSE-22",
+    "reason": "Makeup class for Monday quiz",
+    "createdAt": "2026-10-06T20:25:48.475Z"
+  },
+  {
+    "id": "resc-3",
+    "date": "2026-10-10",
+    "dayName": "Saturday",
+    "time": "11:30 AM - 01:00 PM",
+    "room": "Room 402",
+    "course": "EEE 2105 - Digital Electronics",
+    "batchSection": "EEE Batch 22 (Sec B)",
+    "teacher": "Prof. Michael Chen",
+    "crName": "Fahim",
+    "crKey": "CR-EEE-22",
+    "reason": "Review lecture before midterm",
+    "createdAt": "2026-10-06T20:25:48.475Z"
+  },
+  {
+    "id": "resc-1791318513909-g4bj",
+    "date": "2026-10-15",
+    "dayName": "Thursday",
+    "time": "10:00 AM - 11:30 AM",
+    "room": "Room 301",
+    "course": "CSE 4101 - AI",
+    "batchSection": "Batch 21 (Sec A)",
+    "teacher": "",
+    "crName": "Rayhan",
+    "crKey": "CR-CSE-22",
+    "reason": "",
+    "createdAt": "2026-10-06T20:28:33.909Z"
+  },
+  {
+    "id": "resc-1791318556241-upwm",
+    "date": "2026-10-06",
+    "dayName": "Tuesday",
+    "time": "10:00 AM - 11:30 AM",
+    "room": "Room 301",
+    "course": "cxzc",
+    "batchSection": "xcvcxv",
+    "teacher": "",
+    "crName": "Rayhan",
+    "crKey": "CR-CSE-22",
+    "reason": "",
+    "createdAt": "2026-10-06T20:29:16.241Z"
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "id": "cls-1",
+    "day": "Sunday",
+    "time": "10:00 AM - 11:30 AM",
+    "room": "Room 301",
+    "course": "CSE 1101 - Programming Language",
+    "batchSection": "Batch 24 (Sec A)",
+    "teacher": "Lecturer Nabil",
+    "captain": "Tanvir (01711-XXXXXX)",
+    "createdAt": "2026-10-06T20:17:27.698Z"
+  },
+  {
+    "id": "cls-2",
+    "day": "Monday",
+    "time": "10:00 AM - 11:30 AM",
+    "room": "Room 302",
+    "course": "CSE 3101 - Database Systems",
+    "batchSection": "Batch 22 (Sec A)",
+    "teacher": "Dr. Sarah Connor",
+    "captain": "Rayhan (01811-XXXXXX)",
+    "createdAt": "2026-10-06T20:17:27.698Z"
+  },
+  {
+    "id": "cls-3",
+    "day": "Monday",
+    "time": "01:30 PM - 03:00 PM",
+    "room": "Lab 101",
+    "course": "CSE 3102 - DBMS Lab",
+    "batchSection": "Batch 22 (Sec B)",
+    "teacher": "Lecturer Rayhan",
+    "captain": "Fahim (01911-XXXXXX)",
+    "createdAt": "2026-10-06T20:17:27.698Z"
+  },
+  {
+    "id": "cls-4",
+    "day": "Tuesday",
+    "time": "11:30 AM - 01:00 PM",
+    "room": "Room 401",
+    "course": "CSE 2201 - Data Structures",
+    "batchSection": "Batch 23 (Sec A)",
+    "teacher": "Prof. Mark Davis",
+    "captain": "Sakib (01511-XXXXXX)",
+    "createdAt": "2026-10-06T20:17:27.698Z"
+  },
+  {
+    "id": "cls-5",
+    "day": "Wednesday",
+    "time": "10:00 AM - 11:30 AM",
+    "room": "Room 301",
+    "course": "CSE 3105 - Software Engineering",
+    "batchSection": "Batch 22 (Sec A)",
+    "teacher": "Prof. David Lee",
+    "captain": "Rayhan (01811-XXXXXX)",
+    "createdAt": "2026-10-06T20:17:27.698Z"
+  }
+]

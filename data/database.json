@@ -1,0 +1,74 @@
+{
+  "rooms": [
+    {
+      "id": "room-301",
+      "name": "Room 301"
+    },
+    {
+      "id": "room-302",
+      "name": "Room 302"
+    },
+    {
+      "id": "room-401",
+      "name": "Room 401"
+    },
+    {
+      "id": "room-303",
+      "name": "Room 303"
+    },
+    {
+      "id": "room-304",
+      "name": "Room 304"
+    },
+    {
+      "id": "lab-306",
+      "name": "Lab 306"
+    },
+    {
+      "id": "lab-307",
+      "name": "Lab 307"
+    },
+    {
+      "id": "lab-308",
+      "name": "Lab 308"
+    }
+  ],
+  "timeSlots": [
+    {
+      "id": "slot-1",
+      "period": 1,
+      "label": "08:30 AM - 09:50 AM",
+      "startTime": "08:30",
+      "endTime": "09:50"
+    },
+    {
+      "id": "slot-2",
+      "period": 2,
+      "label": "09:50 AM - 11:10 AM",
+      "startTime": "09:50",
+      "endTime": "11:10"
+    },
+    {
+      "id": "slot-3",
+      "period": 3,
+      "label": "11:10 AM - 12:30 PM",
+      "startTime": "11:10",
+      "endTime": "12:30"
+    },
+    {
+      "id": "slot-4",
+      "period": 4,
+      "label": "01:50 PM - 03:10 PM",
+      "startTime": "13:50",
+      "endTime": "15:10"
+    },
+    {
+      "id": "slot-5",
+      "period": 5,
+      "label": "03:10 PM - 04:30 PM",
+      "startTime": "15:10",
+      "endTime": "16:30"
+    }
+  ],
+  "reschedules": []
+}

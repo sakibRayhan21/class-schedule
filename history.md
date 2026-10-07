@@ -107,4 +107,6 @@ A web application designed for university class captains and department coordina
   - Rooms and 5 time slots preserved cleanly in pristine state for actual university use.
 - **Git & Deployment Configuration**:
   - Created [`.gitignore`](file:///d:/Project/Class%20schedule/.gitignore) to exclude `node_modules`, `.next`, cache, and temporary files.
-  - Ready for 24/7 cloud hosting (Render / Vercel / GitHub).
+  - Initialized Git repository, staged all clean production code, and committed to branch `main`.
+  - Ready to push to GitHub remote repository.
+

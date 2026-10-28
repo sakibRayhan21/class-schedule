@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { getDatabase, addReschedule, deleteReschedule } from '@/lib/db';
 import { VALID_BATCHES } from '@/lib/types';
 
+// Force dynamic execution on Vercel so data is never cached stale
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
-    const db = getDatabase();
+    const db = await getDatabase();
     return NextResponse.json({
       rooms: db.rooms || [],
       timeSlots: db.timeSlots || [],
@@ -28,7 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = addReschedule({
+    const result = await addReschedule({
       date,
       slotId,
       roomId,
@@ -62,7 +65,7 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const result = deleteReschedule(id, passcode);
+    const result = await deleteReschedule(id, passcode);
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 403 });
     }

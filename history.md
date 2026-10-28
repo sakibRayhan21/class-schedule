@@ -110,4 +110,14 @@ A web application designed for university class captains and department coordina
   - Successfully pushed all code to GitHub repository: **[`sakibRayhan21/class-schedule`](https://github.com/sakibRayhan21/class-schedule)**.
   - Ready for 1-click 24/7 cloud deployment on Vercel or Render.
 
+### [2026-10-28] - Supabase Cloud Database Integration for Vercel
+- **Diagnosed Issue**: Vercel's serverless environment has a read-only, ephemeral filesystem, which prevented changes to local `data/database.json` from persisting after deploy.
+- **Implemented Supabase Cloud Integration**:
+  - Installed `@supabase/supabase-js`.
+  - Created [`lib/supabase.ts`](file:///d:/Project/Class%20schedule/lib/supabase.ts) and updated [`lib/db.ts`](file:///d:/Project/Class%20schedule/lib/db.ts) to read and write directly to Supabase cloud PostgreSQL when environment variables are set.
+  - Created [`supabase-schema.sql`](file:///d:/Project/Class%20schedule/supabase-schema.sql) with one-click table creation and pre-population for all 8 rooms and 5 time slots.
+  - Maintained complete local fallback to `data/database.json` when offline.
+  - Verified Next.js build compilation with 0 errors.
+
+
 

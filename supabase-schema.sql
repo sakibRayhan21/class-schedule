@@ -1,15 +1,14 @@
 -- ========================================================
 -- UniSchedule: Supabase Database Schema & Initial Data
--- Run this script in your Supabase SQL Editor (1-Click Run)
+-- Idempotent (Safe to run multiple times without errors)
 -- ========================================================
 
--- 1. Create Rooms Table
+-- 1. Create Tables
 CREATE TABLE IF NOT EXISTS public.rooms (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL
 );
 
--- 2. Create Time Slots Table
 CREATE TABLE IF NOT EXISTS public.time_slots (
   id TEXT PRIMARY KEY,
   period INT NOT NULL,
@@ -18,7 +17,6 @@ CREATE TABLE IF NOT EXISTS public.time_slots (
   end_time TEXT NOT NULL
 );
 
--- 3. Create Reschedules Table
 CREATE TABLE IF NOT EXISTS public.reschedules (
   id TEXT PRIMARY KEY,
   date TEXT NOT NULL,
@@ -33,22 +31,28 @@ CREATE TABLE IF NOT EXISTS public.reschedules (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Enable Row Level Security (RLS) & Allow Anonymous Read/Write
+-- 2. Enable Row Level Security (RLS)
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reschedules ENABLE ROW LEVEL SECURITY;
 
--- Allow public read access
-CREATE POLICY IF NOT EXISTS "Allow public read on rooms" ON public.rooms FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "Allow public read on time_slots" ON public.time_slots FOR SELECT USING (true);
-CREATE POLICY IF NOT EXISTS "Allow public read on reschedules" ON public.reschedules FOR SELECT USING (true);
+-- 3. Safely Drop Existing Policies (prevents 42710 policy already exists error)
+DROP POLICY IF EXISTS "Allow public read on rooms" ON public.rooms;
+DROP POLICY IF EXISTS "Allow public read on time_slots" ON public.time_slots;
+DROP POLICY IF EXISTS "Allow public read on reschedules" ON public.reschedules;
+DROP POLICY IF EXISTS "Allow public insert on reschedules" ON public.reschedules;
+DROP POLICY IF EXISTS "Allow public update on reschedules" ON public.reschedules;
+DROP POLICY IF EXISTS "Allow public delete on reschedules" ON public.reschedules;
 
--- Allow public write & delete on reschedules (conflict checking & passcode protection are handled by our API)
-CREATE POLICY IF NOT EXISTS "Allow public insert on reschedules" ON public.reschedules FOR INSERT WITH CHECK (true);
-CREATE POLICY IF NOT EXISTS "Allow public update on reschedules" ON public.reschedules FOR UPDATE USING (true);
-CREATE POLICY IF NOT EXISTS "Allow public delete on reschedules" ON public.reschedules FOR DELETE USING (true);
+-- 4. Re-create Policies
+CREATE POLICY "Allow public read on rooms" ON public.rooms FOR SELECT USING (true);
+CREATE POLICY "Allow public read on time_slots" ON public.time_slots FOR SELECT USING (true);
+CREATE POLICY "Allow public read on reschedules" ON public.reschedules FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on reschedules" ON public.reschedules FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on reschedules" ON public.reschedules FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete on reschedules" ON public.reschedules FOR DELETE USING (true);
 
--- 5. Insert the 8 Classrooms & Labs
+-- 5. Insert the 8 Rooms
 INSERT INTO public.rooms (id, name) VALUES
   ('room-301', 'Room 301'),
   ('room-302', 'Room 302'),

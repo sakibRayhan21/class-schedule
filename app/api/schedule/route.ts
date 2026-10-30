@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDatabase, addReschedule, deleteReschedule } from '@/lib/db';
+import { getDatabase, addReschedule, updateReschedule, deleteReschedule, cleanupPastReschedules } from '@/lib/db';
 import { VALID_BATCHES } from '@/lib/types';
 
 // Force dynamic execution on Vercel so data is never cached stale
@@ -52,11 +52,52 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, date, slotId, roomId, courseCode, courseTitle, batch, passcode, reason } = body;
+
+    if (!id || !date || !slotId || !roomId || !courseCode || !batch || !passcode) {
+      return NextResponse.json(
+        { error: 'Missing required fields for update (id, date, slot, room, course, batch, passcode).' },
+        { status: 400 }
+      );
+    }
+
+    const result = await updateReschedule({
+      id,
+      date,
+      slotId,
+      roomId,
+      courseCode,
+      courseTitle,
+      batch,
+      passcode,
+      reason,
+    });
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 409 });
+    }
+
+    return NextResponse.json({ success: true, booking: result.booking });
+  } catch (error) {
+    return NextResponse.json({ error: 'Server error updating reschedule' }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const passcode = searchParams.get('passcode');
+    const action = searchParams.get('action');
+
+    // Optional manual cleanup trigger
+    if (action === 'cleanup') {
+      const { deletedCount } = await cleanupPastReschedules();
+      return NextResponse.json({ success: true, message: `Cleaned up ${deletedCount} past class records.` });
+    }
 
     if (!id || !passcode) {
       return NextResponse.json(

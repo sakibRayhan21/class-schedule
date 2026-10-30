@@ -119,5 +119,14 @@ A web application designed for university class captains and department coordina
   - Maintained complete local fallback to `data/database.json` when offline.
   - Verified Next.js build compilation with 0 errors.
 
-
-
+### [2026-10-30] - Edit Class Capability & Auto Storage Saver (Past Data Purge)
+- **Edit Class Feature**:
+  - Added an **Edit** button (pencil icon) directly on each rescheduled class card.
+  - Implemented an **Edit Rescheduled Class** modal with prefilled data (date, slot, room, course code, title, batch, and reason).
+  - Implemented `PUT /api/schedule` endpoint in [`app/api/schedule/route.ts`](file:///d:/Project/Class%20schedule/app/api/schedule/route.ts) with batch secret key verification and conflict detection (ignoring self).
+  - Supports updating records in both Supabase cloud database and local fallback.
+- **Database Storage Optimization (Yesterday's Data Cleanup)**:
+  - Addressed database storage shortage question: Confirmed that purging past/yesterday's data is **highly feasible and recommended** for class rescheduling systems.
+  - Implemented `cleanupPastReschedules()` in [`lib/db.ts`](file:///d:/Project/Class%20schedule/lib/db.ts): Automatically deletes classes where `date < today`.
+  - Added a **"Clean Past Records"** button in the header for on-demand manual cleanup (`DELETE /api/schedule?action=cleanup`).
+  - Added a storage indicator banner informing users that auto-storage optimization is active.

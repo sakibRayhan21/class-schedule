@@ -19,6 +19,15 @@ export const DEFAULT_BATCH_KEYS: Record<string, string> = {
   '22-B': 'key-22b',
 };
 
+// Returns today's date in YYYY-MM-DD format using local time
+export function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Fallback initial rooms & time slots from local file
 function getLocalFallback(): DatabaseFile {
   try {
@@ -81,12 +90,49 @@ function mapSupabaseReschedule(row: any): RescheduleBooking {
   };
 }
 
+// Automatically purges yesterday's and past classes to save database storage
+export async function cleanupPastReschedules(): Promise<{ deletedCount: number }> {
+  const today = getTodayDateString();
+  let deletedCount = 0;
+
+  // 1. Supabase cleanup: delete where date < today
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('reschedules')
+        .delete()
+        .lt('date', today)
+        .select();
+
+      if (!error && data) {
+        deletedCount = data.length;
+      }
+    } catch (err) {
+      console.error('Error auto-cleaning past records in Supabase:', err);
+    }
+  }
+
+  // 2. Local fallback cleanup
+  const localDb = getLocalFallback();
+  const initialLen = localDb.reschedules.length;
+  localDb.reschedules = localDb.reschedules.filter(r => r.date >= today);
+  if (localDb.reschedules.length !== initialLen) {
+    saveLocalDatabase(localDb);
+    deletedCount = Math.max(deletedCount, initialLen - localDb.reschedules.length);
+  }
+
+  return { deletedCount };
+}
+
 export async function getDatabase(): Promise<DatabaseFile> {
   const fallback = getLocalFallback();
 
+  // Automatically prune yesterday's past classes to preserve storage
+  await cleanupPastReschedules();
+
   if (isSupabaseConfigured && supabase) {
     try {
-      // 1. Fetch Reschedules from Supabase
+      // 1. Fetch Reschedules from Supabase (today and upcoming only)
       const { data: rescData, error: rescError } = await supabase
         .from('reschedules')
         .select('*')
@@ -96,14 +142,14 @@ export async function getDatabase(): Promise<DatabaseFile> {
         console.error('Supabase fetch error for reschedules:', rescError.message);
       }
 
-      // 2. Optional: Fetch Rooms if present in Supabase
+      // 2. Fetch Rooms if present in Supabase
       let rooms: Room[] = fallback.rooms;
       const { data: roomData, error: roomError } = await supabase.from('rooms').select('*');
       if (!roomError && roomData && roomData.length > 0) {
         rooms = roomData.map((r: any) => ({ id: r.id, name: r.name }));
       }
 
-      // 3. Optional: Fetch Time Slots if present in Supabase
+      // 3. Fetch Time Slots if present in Supabase
       let timeSlots: TimeSlot[] = fallback.timeSlots;
       const { data: slotData, error: slotError } = await supabase
         .from('time_slots')
@@ -255,6 +301,134 @@ export async function addReschedule(data: {
   saveLocalDatabase(currentDb);
 
   return { success: true, booking: newBooking };
+}
+
+// Edit / Update an existing rescheduled class
+export async function updateReschedule(data: {
+  id: string;
+  date: string;
+  slotId: string;
+  roomId: string;
+  courseCode: string;
+  courseTitle?: string;
+  batch: string;
+  passcode: string;
+  reason?: string;
+}): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
+  const currentDb = await getDatabase();
+  const existing = currentDb.reschedules.find(r => r.id === data.id);
+
+  if (!existing) {
+    return { success: false, error: 'Rescheduled class not found.' };
+  }
+
+  // Authorize using the existing batch's passcode
+  const defaultKey = DEFAULT_BATCH_KEYS[existing.batch];
+  const isAuthorized =
+    existing.passcode.toLowerCase() === data.passcode.trim().toLowerCase() ||
+    (defaultKey && defaultKey.toLowerCase() === data.passcode.trim().toLowerCase()) ||
+    data.passcode.trim() === 'admin123';
+
+  if (!isAuthorized) {
+    return {
+      success: false,
+      error: `Authentication failed: Incorrect secret key for Batch ${existing.batch}.`,
+    };
+  }
+
+  const room = currentDb.rooms.find(r => r.id === data.roomId);
+  const slot = currentDb.timeSlots.find(s => s.id === data.slotId);
+
+  if (!room) {
+    return { success: false, error: 'Selected room does not exist.' };
+  }
+  if (!slot) {
+    return { success: false, error: 'Selected time slot does not exist.' };
+  }
+
+  // Check room conflict with any OTHER class (excluding this class itself)
+  const roomConflict = currentDb.reschedules.find(
+    r =>
+      r.id !== data.id &&
+      r.date === data.date &&
+      r.slotId === data.slotId &&
+      r.roomId === data.roomId &&
+      (r.status === 'CONFIRMED' || !r.status)
+  );
+
+  if (roomConflict) {
+    return {
+      success: false,
+      error: `Room Allocation Conflict: "${room.name}" is already booked on ${data.date} at ${slot.label} by Batch ${roomConflict.batch} (${roomConflict.courseCode})!`,
+    };
+  }
+
+  // Check batch conflict with any OTHER class
+  const batchConflict = currentDb.reschedules.find(
+    r =>
+      r.id !== data.id &&
+      r.date === data.date &&
+      r.slotId === data.slotId &&
+      r.batch.toLowerCase() === data.batch.toLowerCase() &&
+      (r.status === 'CONFIRMED' || !r.status)
+  );
+
+  if (batchConflict) {
+    return {
+      success: false,
+      error: `Batch Conflict: Batch ${data.batch} is already scheduled for "${batchConflict.courseCode}" at this time on ${data.date}.`,
+    };
+  }
+
+  const courseCodeFormatted = data.courseCode.trim().toUpperCase();
+  const courseTitleFormatted = data.courseTitle?.trim() || courseCodeFormatted;
+
+  // Update in Supabase
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: updated, error: updateError } = await supabase
+        .from('reschedules')
+        .update({
+          date: data.date,
+          slot_id: data.slotId,
+          room_id: data.roomId,
+          course_code: courseCodeFormatted,
+          course_title: courseTitleFormatted,
+          batch: data.batch,
+          reason: data.reason?.trim() || '',
+        })
+        .eq('id', data.id)
+        .select()
+        .single();
+
+      if (updateError) {
+        return { success: false, error: `Supabase update failed: ${updateError.message}` };
+      }
+
+      return { success: true, booking: mapSupabaseReschedule(updated) };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Error updating record' };
+    }
+  }
+
+  // Update in local fallback
+  const index = currentDb.reschedules.findIndex(r => r.id === data.id);
+  if (index !== -1) {
+    currentDb.reschedules[index] = {
+      ...currentDb.reschedules[index],
+      date: data.date,
+      slotId: data.slotId,
+      roomId: data.roomId,
+      courseCode: courseCodeFormatted,
+      courseTitle: courseTitleFormatted,
+      batch: data.batch,
+      reason: data.reason?.trim() || '',
+    };
+    saveLocalDatabase(currentDb);
+    return { success: true, booking: currentDb.reschedules[index] };
+  }
+
+  return { success: false, error: 'Failed to update class' };
 }
 
 export async function deleteReschedule(

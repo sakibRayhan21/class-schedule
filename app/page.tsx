@@ -7,13 +7,15 @@ import {
   MapPin,
   Users,
   Plus,
+  Pencil,
   Trash2,
   AlertCircle,
   CheckCircle2,
   X,
   KeyRound,
   Shield,
-  BookOpen,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Room, TimeSlot, RescheduleBooking, VALID_BATCHES, ValidBatch } from '@/lib/types';
@@ -23,9 +25,9 @@ export default function RescheduleHomePage() {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [reschedules, setReschedules] = useState<RescheduleBooking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Form Fields
+  // Add Class Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [date, setDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split('T')[0];
@@ -38,12 +40,26 @@ export default function RescheduleHomePage() {
   const [passcode, setPasscode] = useState('');
   const [reason, setReason] = useState('Makeup Class');
 
-  // Status & Alerts
+  // Edit Class Modal State
+  const [editTarget, setEditTarget] = useState<RescheduleBooking | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editSlotId, setEditSlotId] = useState('');
+  const [editRoomId, setEditRoomId] = useState('');
+  const [editCourseCode, setEditCourseCode] = useState('');
+  const [editCourseTitle, setEditCourseTitle] = useState('');
+  const [editBatch, setEditBatch] = useState<ValidBatch>('22-A');
+  const [editPasscode, setEditPasscode] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editingSubmitting, setEditingSubmitting] = useState(false);
+
+  // Status & Feedback
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
 
-  // Delete Modal
+  // Delete Modal State
   const [deleteTarget, setDeleteTarget] = useState<RescheduleBooking | null>(null);
   const [deletePasscode, setDeletePasscode] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -183,8 +199,8 @@ export default function RescheduleHomePage() {
 
       // Success
       confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
-      showToast(`🎉 Class added for Batch ${batch}!`);
-      setIsModalOpen(false);
+      showToast(`🎉 Class scheduled for Batch ${batch}!`);
+      setIsAddModalOpen(false);
 
       // Reset
       setCourseCode('');
@@ -198,6 +214,67 @@ export default function RescheduleHomePage() {
       setErrorMsg('Network error. Please try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Open Edit Modal with Prepopulated Values
+  const handleOpenEdit = (item: RescheduleBooking) => {
+    setEditTarget(item);
+    setEditDate(item.date);
+    setEditSlotId(item.slotId);
+    setEditRoomId(item.roomId);
+    setEditCourseCode(item.courseCode);
+    setEditCourseTitle(item.courseTitle);
+    setEditBatch((item.batch as ValidBatch) || '22-A');
+    setEditReason(item.reason || '');
+    setEditPasscode('');
+    setEditError(null);
+  };
+
+  // Submit Edit Class
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    setEditError(null);
+
+    if (!editPasscode.trim()) {
+      setEditError(`Please enter the secret key for Batch ${editTarget.batch} to authorize changes.`);
+      return;
+    }
+
+    setEditingSubmitting(true);
+    try {
+      const res = await fetch('/api/schedule', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editTarget.id,
+          date: editDate,
+          slotId: editSlotId,
+          roomId: editRoomId,
+          courseCode: editCourseCode.trim(),
+          courseTitle: editCourseTitle.trim() || editCourseCode.trim(),
+          batch: editBatch,
+          passcode: editPasscode.trim(),
+          reason: editReason.trim(),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setEditError(data.error || 'Failed to update class.');
+        return;
+      }
+
+      showToast('✏️ Class updated successfully!');
+      setEditTarget(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      setEditError('Network error updating class.');
+    } finally {
+      setEditingSubmitting(false);
     }
   };
 
@@ -234,6 +311,24 @@ export default function RescheduleHomePage() {
     }
   };
 
+  // Manual Trigger to Purge Past Classes
+  const handlePurgePast = async () => {
+    if (!confirm("Clean up yesterday's and older past classes from database?")) return;
+    try {
+      setCleaning(true);
+      const res = await fetch('/api/schedule?action=cleanup', { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`🧹 ${data.message || 'Past records cleaned up!'}`);
+        fetchData();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCleaning(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16">
       {/* Toast Alert */}
@@ -261,36 +356,56 @@ export default function RescheduleHomePage() {
             </div>
           </div>
 
-          {/* Add Class Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setErrorMsg(null);
-              setIsModalOpen(true);
-            }}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-600/25 transition-all cursor-pointer transform hover:-translate-y-0.5"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Add Class</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Storage Saver Clean Button */}
+            <button
+              type="button"
+              onClick={handlePurgePast}
+              disabled={cleaning}
+              title="Automatically purge past dates to save database storage"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${cleaning ? 'animate-spin' : ''}`} />
+              <span>Clean Past Records</span>
+            </button>
+
+            {/* Add Class Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMsg(null);
+                setIsAddModalOpen(true);
+              }}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-sm shadow-md shadow-emerald-600/25 transition-all cursor-pointer transform hover:-translate-y-0.5"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Add Class</span>
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-6">
-        {/* Banner */}
+        {/* Banner with Storage Feasibility Notice */}
         <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden">
           <div className="max-w-2xl space-y-2 relative z-10">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-700/80 border border-emerald-500/30 text-xs font-semibold text-emerald-200">
               <Shield className="w-3.5 h-3.5" />
-              Batch Authentication (Batches: 15, 16, 17, 18, 19, 20, 21, 22-A, 22-B)
+              Batch Auth (15, 16, 17, 18, 19, 20, 21, 22-A, 22-B)
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Date-Wise Rescheduled Classes
             </h2>
             <p className="text-sm text-emerald-100/90 leading-relaxed">
-              When a class is added to reschedule, its date row appears below. Rooms are protected from double-booking.
+              When a class is rescheduled, its date row appears below. Rooms are protected against duplicate booking.
             </p>
+            <div className="pt-2 flex items-center gap-2 text-xs text-emerald-200">
+              <Sparkles className="w-4 h-4 text-emerald-300" />
+              <span>
+                <strong>Auto Storage Saver Active:</strong> Yesterday's and past records are automatically cleared to keep your cloud database fast and storage-efficient!
+              </span>
+            </div>
           </div>
         </div>
 
@@ -306,15 +421,15 @@ export default function RescheduleHomePage() {
               <Calendar className="w-8 h-8" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-slate-800">No Rescheduled Classes Yet</h3>
+              <h3 className="text-lg font-bold text-slate-800">No Rescheduled Classes Scheduled</h3>
               <p className="text-sm text-slate-500 max-w-md mx-auto">
-                No dates have reschedules. Click the <strong>Add Class</strong> button above to allocate a room using your Batch key.
+                No active reschedules. Click the <strong>Add Class</strong> button above to allocate a room using your Batch key.
               </p>
             </div>
             <button
               onClick={() => {
                 setErrorMsg(null);
-                setIsModalOpen(true);
+                setIsAddModalOpen(true);
               }}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer shadow-sm transition-all"
             >
@@ -394,23 +509,38 @@ export default function RescheduleHomePage() {
                         )}
                       </div>
 
-                      {/* Remove Button */}
+                      {/* Card Action Buttons: EDIT & DELETE */}
                       <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
                         <span className="text-[11px] text-slate-400 font-medium">
                           Batch: <strong>{item.batch}</strong>
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteTarget(item);
-                            setDeletePasscode('');
-                            setDeleteError(null);
-                          }}
-                          className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                          title="Delete class (Batch key required)"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+
+                        <div className="flex items-center gap-1">
+                          {/* EDIT BUTTON */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(item)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                            title="Edit this class"
+                          >
+                            <Pencil className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+
+                          {/* DELETE BUTTON */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteTarget(item);
+                              setDeletePasscode('');
+                              setDeleteError(null);
+                            }}
+                            className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Delete class (Batch key required)"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -421,8 +551,8 @@ export default function RescheduleHomePage() {
         )}
       </main>
 
-      {/* ADD CLASS MODAL WITH BATCH + KEY AUTHENTICATION */}
-      {isModalOpen && (
+      {/* MODAL 1: ADD CLASS */}
+      {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
@@ -433,7 +563,7 @@ export default function RescheduleHomePage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setIsAddModalOpen(false)}
                 className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -442,7 +572,6 @@ export default function RescheduleHomePage() {
 
             {/* Modal Form */}
             <form onSubmit={handleAddClass} className="p-6 space-y-4">
-              {/* Conflict Error Message */}
               {errorMsg && (
                 <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -450,7 +579,7 @@ export default function RescheduleHomePage() {
                 </div>
               )}
 
-              {/* BATCH & SECRET KEY AUTHENTICATION */}
+              {/* Batch & Secret Key */}
               <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
                   <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
@@ -587,7 +716,7 @@ export default function RescheduleHomePage() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => setIsAddModalOpen(false)}
                   className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
@@ -605,7 +734,173 @@ export default function RescheduleHomePage() {
         </div>
       )}
 
-      {/* DELETE MODAL (BATCH SECRET KEY AUTHENTICATION) */}
+      {/* MODAL 2: EDIT CLASS */}
+      {editTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-emerald-700 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5" />
+                <h3 className="font-bold text-lg">Edit Rescheduled Class</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditTarget(null)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
+              {editError && (
+                <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <span className="font-medium">{editError}</span>
+                </div>
+              )}
+
+              {/* Batch & Authorization */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-950">
+                    Editing Class for Batch {editTarget.batch}
+                  </span>
+                  <span className="text-[11px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded">
+                    Batch {editTarget.batch}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Enter Secret Key for Batch {editTarget.batch} to Save Changes *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Secret Key"
+                    value={editPasscode}
+                    onChange={e => setEditPasscode(e.target.value)}
+                    className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Date & Time Slot */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editDate}
+                    onChange={e => setEditDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Time Slot *
+                  </label>
+                  <select
+                    value={editSlotId}
+                    onChange={e => setEditSlotId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    {timeSlots.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.label} (Period {s.period})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Room Allocation */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Room Allocation *
+                </label>
+                <select
+                  value={editRoomId}
+                  onChange={e => setEditRoomId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {rooms.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Course Code & Title */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Course Code *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editCourseCode}
+                    onChange={e => setEditCourseCode(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Course Title
+                  </label>
+                  <input
+                    type="text"
+                    value={editCourseTitle}
+                    onChange={e => setEditCourseTitle(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Reason for Reschedule
+                </label>
+                <input
+                  type="text"
+                  value={editReason}
+                  onChange={e => setEditReason(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editingSubmitting}
+                  className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white shadow-md shadow-emerald-600/20 cursor-pointer transition-all"
+                >
+                  {editingSubmitting ? 'Updating...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: DELETE CLASS */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">

@@ -140,6 +140,28 @@ export default function RescheduleHomePage() {
     checkAdminSession();
   }, []);
 
+  // Responsive Display Mode: Desktop defaults to 'table' (Compact Schedule Table),
+  // while mobile (< 768px) automatically switches to 'cards' mode.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const checkViewport = () => {
+      const isMobile = window.innerWidth < 768;
+      setViewMode(isMobile ? 'cards' : 'table');
+    };
+
+    // Set initial view mode based on current screen width
+    checkViewport();
+
+    // Automatically switch when resizing or rotating between mobile and desktop viewports
+    window.addEventListener('resize', checkViewport);
+    window.addEventListener('orientationchange', checkViewport);
+    return () => {
+      window.removeEventListener('resize', checkViewport);
+      window.removeEventListener('orientationchange', checkViewport);
+    };
+  }, []);
+
   useEffect(() => {
     if (rooms.length > 0 && !roomId) setRoomId(rooms[0].id);
     if (timeSlots.length > 0 && !slotId) setSlotId(timeSlots[0].id);
@@ -394,7 +416,9 @@ export default function RescheduleHomePage() {
         setTimeout(() => setNewlyAddedId(null), 6000);
       }
 
-      setViewMode('table');
+      // Maintain compact table on desktop, but cards mode on mobile
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+      setViewMode(isMobile ? 'cards' : 'table');
 
       try {
         const confetti = (await import('canvas-confetti')).default;
@@ -895,7 +919,7 @@ export default function RescheduleHomePage() {
                       return (
                         <div
                           key={item.id}
-                          className={`bg-slate-50/70 border rounded-2xl p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
+                          className={`bg-slate-50/70 border rounded-2xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
                             isNewlyAdded
                               ? 'border-emerald-500 ring-2 ring-emerald-500/80 bg-emerald-50/60'
                               : 'border-slate-200 hover:border-emerald-300'

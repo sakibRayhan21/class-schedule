@@ -12,7 +12,7 @@ const ADMIN_CREDENTIALS_PATH = path.join(process.cwd(), 'data', 'admin-credentia
 const CR_CREDENTIALS_PATH = path.join(process.cwd(), 'data', 'cr-credentials.json');
 
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || 'development-session-secret-class-schedule-2026';
-const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'adminKYAU';
 
 export type SessionUser =
   | { role: 'admin'; username: string }

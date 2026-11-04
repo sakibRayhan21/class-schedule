@@ -1,34 +1,103 @@
-# dependencies
+# ==============================================================================
+# Dependencies
+# ==============================================================================
 /node_modules
 /.pnp
 .pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
 
-# testing
-/coverage
+# ==============================================================================
+# Environment Variables & Secrets (Strictly Block All Real Keys)
+# ==============================================================================
+.env
+.env.*
+!.env.example
+!.env.template
 
-# next.js
+# ==============================================================================
+# Security, Certificates, Keys & Credentials
+# ==============================================================================
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*.pub
+*credentials*.json
+*credentials*.js
+*credentials*.ts
+/data/*-credentials.json
+/data/admin-credentials.json
+/data/cr-credentials.json
+*.secret
+*.token
+id_rsa*
+id_ed25519*
+
+# ==============================================================================
+# Next.js, Production Builds & Cache
+# ==============================================================================
 /.next/
 /out/
-
-# production
 /build
+/dist
+*.tsbuildinfo
+next-env.d.ts
 
-# misc
-.DS_Store
-*.pem
+# ==============================================================================
+# Testing & Code Coverage
+# ==============================================================================
+/coverage
+*.lcov
+.nyc_output
 
-# debug
+# ==============================================================================
+# Logs & Process Dumps
+# ==============================================================================
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# local env files
-.env*.local
-.env
-/data/admin-credentials.json
-/data/cr-credentials.json
-/data/*-credentials.json
+# ==============================================================================
+# Local Runtime State, Temp & Backup Files
+# ==============================================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+data/*.tmp
+data/database.json.tmp
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# ==============================================================================
+# OS Generated Files
+# ==============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==============================================================================
+# IDEs & Editor Configuration
+# ==============================================================================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

@@ -18,6 +18,9 @@ import {
   KeyRound,
   LogOut,
   Lock,
+  Table as TableIcon,
+  LayoutGrid,
+  Copy,
 } from 'lucide-react';
 import { Room, TimeSlot, RescheduleBooking, VALID_BATCHES, ValidBatch } from '@/lib/types';
 
@@ -96,6 +99,10 @@ export default function RescheduleHomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [cleaning, setCleaning] = useState(false);
 
+  // Display Style: 'table' (Compact Schedule Table) or 'cards'
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
+
   const isAdmin = currentUser?.role === 'admin';
   const isCR = currentUser?.role === 'cr';
 
@@ -159,7 +166,7 @@ export default function RescheduleHomePage() {
     if (timeSlots.length > 0 && !slotId) setSlotId(timeSlots[0].id);
   }, [rooms, timeSlots]);
 
-  // Group by Date:
+  // Group by Date & Sort within each date chronologically by slot period:
   // A row appears on home screen if and only if it is added to reschedule!
   const dateWiseRows = useMemo(() => {
     const map = new Map<string, RescheduleBooking[]>();
@@ -170,13 +177,25 @@ export default function RescheduleHomePage() {
         map.set(item.date, list);
       }
     }
-    return Array.from(map.entries()).sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
-  }, [reschedules]);
+    const sortedDates = Array.from(map.entries()).sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+    return sortedDates.map(([d, items]) => {
+      const sortedItems = [...items].sort((a, b) => {
+        const slotA = timeSlots.find(s => s.id === a.slotId)?.period ?? 99;
+        const slotB = timeSlots.find(s => s.id === b.slotId)?.period ?? 99;
+        return slotA - slotB;
+      });
+      return [d, sortedItems] as [string, RescheduleBooking[]];
+    });
+  }, [reschedules, timeSlots]);
 
   // Helpers to resolve Room and Slot labels
   const getRoomName = (rId: string) => {
     const found = rooms.find(r => r.id === rId);
     return found ? found.name : rId;
+  };
+
+  const getSlot = (sId: string) => {
+    return timeSlots.find(s => s.id === sId);
   };
 
   const getSlotLabel = (sId: string) => {
@@ -196,6 +215,72 @@ export default function RescheduleHomePage() {
       });
     } catch {
       return dateStr;
+    }
+  };
+
+  // Copy Single Class Notice for WhatsApp / Social
+  const handleCopyNotice = async (item: RescheduleBooking) => {
+    const room = getRoomName(item.roomId);
+    const slot = getSlot(item.slotId);
+    const time = slot ? slot.label : item.slotId;
+    const period = slot ? ` (Period ${slot.period})` : '';
+    const dateFormatted = formatDateHeader(item.date);
+
+    const text = [
+      `📢 *RESCHEDULED CLASS NOTICE*`,
+      `📅 *Date:* ${dateFormatted} (${item.date})`,
+      `⏰ *Time:* ${time}${period}`,
+      `🏛️ *Room:* ${room}`,
+      `📚 *Course:* ${item.courseCode}${item.courseTitle ? ` - ${item.courseTitle}` : ''}`,
+      `👥 *Batch:* Batch ${item.batch}`,
+      item.reason ? `📝 *Note:* ${item.reason}` : '',
+    ].filter(Boolean).join('\n');
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      showToast('📋 Notice copied to clipboard! Ready to share on WhatsApp.');
+    } catch {
+      showToast('⚠️ Could not copy notice.');
+    }
+  };
+
+  // Copy Full Day Schedule Notice for WhatsApp
+  const handleCopyDaySchedule = async (dateStr: string, bookings: RescheduleBooking[]) => {
+    const dateFormatted = formatDateHeader(dateStr);
+    const lines = [
+      `📢 *CLASS SCHEDULE — ${dateFormatted.toUpperCase()}*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    ];
+
+    bookings.forEach((item, idx) => {
+      const room = getRoomName(item.roomId);
+      const slot = getSlot(item.slotId);
+      lines.push(
+        `${idx + 1}. *${item.courseCode}*${item.courseTitle ? ` - ${item.courseTitle}` : ''}`,
+        `   ⏰ ${slot ? slot.label : item.slotId}${slot ? ` (Period ${slot.period})` : ''}`,
+        `   🏛️ Room: ${room} | 👥 Batch ${item.batch}`,
+        item.reason ? `   📝 Note: ${item.reason}` : '',
+        `   ────────────────────────`
+      );
+    });
+
+    const text = lines.filter(Boolean).join('\n');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+      showToast(`📋 Copied all notices for ${dateFormatted}!`);
+    } catch {
+      showToast('⚠️ Could not copy schedule.');
     }
   };
 
@@ -270,6 +355,15 @@ export default function RescheduleHomePage() {
         setErrorMsg(data.error || 'Failed to add class.');
         return;
       }
+
+      // Track newly added class to highlight it in the schedule table
+      if (data.booking?.id) {
+        setNewlyAddedId(data.booking.id);
+        setTimeout(() => setNewlyAddedId(null), 6000);
+      }
+
+      // Ensure table view is active to show the compact schedule style
+      setViewMode('table');
 
       // Success
       try {
@@ -648,17 +742,60 @@ export default function RescheduleHomePage() {
             </button>
           </div>
         ) : (
-          /* RENDER EACH DATE AS A DEDICATED ROW */
           <div className="space-y-6">
+            {/* VIEW MODE & SECTION HEADER */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span>Rescheduled Schedule</span>
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                    {reschedules.length}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Organized by date and lecture period
+                </p>
+              </div>
+
+              {/* View Mode Switcher (Compact Table as primary, Cards as alternate) */}
+              <div className="inline-flex items-center p-1 bg-slate-200/80 rounded-2xl self-start sm:self-auto border border-slate-300/60 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    viewMode === 'table'
+                      ? 'bg-white text-emerald-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <TableIcon className="w-3.5 h-3.5" />
+                  <span>Compact Table</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cards')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    viewMode === 'cards'
+                      ? 'bg-white text-emerald-700 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Cards</span>
+                </button>
+              </div>
+            </div>
+
+            {/* RENDER EACH DATE */}
             {dateWiseRows.map(([rowDate, rowBookings]) => (
               <div
                 key={rowDate}
                 className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden"
               >
                 {/* Date Row Header */}
-                <div className="bg-slate-100/80 px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="bg-slate-100/85 px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm">
+                    <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm shrink-0">
                       <Calendar className="w-4 h-4 text-emerald-700" />
                     </span>
                     <div>
@@ -671,106 +808,287 @@ export default function RescheduleHomePage() {
                     </div>
                   </div>
 
-                  <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    {rowBookings.length} {rowBookings.length === 1 ? 'Rescheduled Class' : 'Rescheduled Classes'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyDaySchedule(rowDate, rowBookings)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer shadow-2xs"
+                      title="Copy full day schedule for WhatsApp"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Copy Day Notice</span>
+                    </button>
+
+                    <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      {rowBookings.length} {rowBookings.length === 1 ? 'Class' : 'Classes'}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Scheduled Classes Cards for this Date */}
-                <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {rowBookings.map(item => {
-                    const editable = canEditClass(item);
-                    const deletable = canDeleteClass();
+                {/* COMPACT TABLE DISPLAY STYLE */}
+                {viewMode === 'table' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse min-w-[620px]">
+                      <thead>
+                        <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
+                          <th className="py-3 px-5 sm:px-6 w-[24%]">Time Slot</th>
+                          <th className="py-3 px-4 sm:px-6 w-[16%]">Room</th>
+                          <th className="py-3 px-4 sm:px-6 w-[34%]">Course & Topic</th>
+                          <th className="py-3 px-4 sm:px-6 w-[12%] text-center">Batch</th>
+                          <th className="py-3 px-5 sm:px-6 w-[14%] text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs sm:text-sm">
+                        {rowBookings.map(item => {
+                          const editable = canEditClass(item);
+                          const deletable = canDeleteClass();
+                          const slot = getSlot(item.slotId);
+                          const isMine = isCR && currentUser?.batch === item.batch;
+                          const isNewlyAdded = item.id === newlyAddedId;
 
-                    return (
-                      <div
-                        key={item.id}
-                        className={`bg-slate-50/70 border rounded-2xl p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
-                          isCR && currentUser?.batch === item.batch
-                            ? 'border-emerald-300 ring-1 ring-emerald-200/50 bg-emerald-50/20'
-                            : 'border-slate-200 hover:border-emerald-300'
-                        }`}
-                      >
-                        <div className="space-y-3">
-                          {/* Room Allocation Badge + Time */}
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-xs">
-                              <MapPin className="w-3.5 h-3.5 text-emerald-200" />
-                              {getRoomName(item.roomId)}
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-slate-600 font-semibold text-xs">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              {getSlotLabel(item.slotId)}
-                            </span>
-                          </div>
+                          return (
+                            <tr
+                              key={item.id}
+                              className={`transition-all duration-300 group ${
+                                isNewlyAdded
+                                  ? 'bg-emerald-100/80 ring-2 ring-emerald-500 ring-inset'
+                                  : isMine
+                                  ? 'bg-emerald-50/30 hover:bg-emerald-50/60'
+                                  : 'hover:bg-slate-50/80'
+                              }`}
+                            >
+                              {/* TIME COLUMN */}
+                              <td className="py-3.5 px-5 sm:px-6 align-middle">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs shrink-0 border border-emerald-200/80">
+                                    {slot ? `P${slot.period}` : '•'}
+                                  </span>
+                                  <div className="leading-tight">
+                                    <div className="font-bold text-slate-800 whitespace-nowrap">
+                                      {slot ? slot.label : item.slotId}
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 font-medium">
+                                      {slot ? `Period ${slot.period}` : 'Custom Slot'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
 
-                          {/* Course & Batch */}
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                                Batch {item.batch}
+                              {/* ROOM COLUMN */}
+                              <td className="py-3.5 px-4 sm:px-6 align-middle">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 font-bold text-xs border border-slate-200 whitespace-nowrap group-hover:bg-emerald-50 group-hover:text-emerald-900 group-hover:border-emerald-200 transition-colors">
+                                  <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>{getRoomName(item.roomId)}</span>
+                                </span>
+                              </td>
+
+                              {/* COURSE & TOPIC COLUMN */}
+                              <td className="py-3.5 px-4 sm:px-6 align-middle">
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-extrabold text-slate-900">
+                                      {item.courseCode}
+                                    </span>
+                                    {item.courseTitle && item.courseTitle !== item.courseCode && (
+                                      <span className="text-slate-600 font-medium">
+                                        — {item.courseTitle}
+                                      </span>
+                                    )}
+                                    {isNewlyAdded && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white animate-pulse shadow-xs">
+                                        ✨ Just Added
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.reason && (
+                                    <p className="text-[11px] text-slate-500 italic flex items-center gap-1">
+                                      <span className="not-italic font-semibold text-slate-400">Note:</span>
+                                      <span>{item.reason}</span>
+                                    </p>
+                                  )}
+                                </div>
+                              </td>
+
+                              {/* BATCH COLUMN */}
+                              <td className="py-3.5 px-4 sm:px-6 align-middle text-center">
+                                <span
+                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap ${
+                                    isMine
+                                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-1 ring-emerald-300'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                >
+                                  Batch {item.batch}
+                                </span>
+                              </td>
+
+                              {/* ACTIONS COLUMN */}
+                              <td className="py-3.5 px-5 sm:px-6 align-middle text-right">
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                  {/* WhatsApp Copy Notice */}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyNotice(item)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                    title="Copy WhatsApp Notice"
+                                  >
+                                    <Copy className="w-4 h-4" />
+                                  </button>
+
+                                  {/* Edit Button */}
+                                  {editable && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEdit(item)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                                      title={isAdmin ? "Edit class (Admin)" : "Edit your batch's class"}
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                      <span className="hidden lg:inline">Edit</span>
+                                    </button>
+                                  )}
+
+                                  {/* Delete Button */}
+                                  {deletable && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDeleteTarget(item);
+                                        setDeleteError(null);
+                                      }}
+                                      className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                                      title="Remove class (Admin only)"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+
+                                  {!editable && !deletable && (
+                                    <span className="text-[11px] text-slate-400 italic">View Only</span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  /* CARDS DISPLAY STYLE (ALTERNATE VIEW) */
+                  <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {rowBookings.map(item => {
+                      const editable = canEditClass(item);
+                      const deletable = canDeleteClass();
+                      const isNewlyAdded = item.id === newlyAddedId;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`bg-slate-50/70 border rounded-2xl p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
+                            isNewlyAdded
+                              ? 'border-emerald-500 ring-2 ring-emerald-500/80 bg-emerald-50/60'
+                              : isCR && currentUser?.batch === item.batch
+                              ? 'border-emerald-300 ring-1 ring-emerald-200/50 bg-emerald-50/20'
+                              : 'border-slate-200 hover:border-emerald-300'
+                          }`}
+                        >
+                          <div className="space-y-3">
+                            {/* Room Allocation Badge + Time */}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-xs">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-200" />
+                                {getRoomName(item.roomId)}
                               </span>
-                              <span className="text-xs font-bold text-slate-700">
-                                {item.courseCode}
+                              <span className="inline-flex items-center gap-1 text-slate-600 font-semibold text-xs">
+                                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                {getSlotLabel(item.slotId)}
                               </span>
                             </div>
-                            <h4 className="font-bold text-slate-900 text-base leading-snug mt-1">
-                              {item.courseTitle}
-                            </h4>
-                          </div>
 
-                          {/* Reason / Note */}
-                          {item.reason && (
-                            <div className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 italic">
-                              Note: {item.reason}
+                            {/* Course & Batch */}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                  Batch {item.batch}
+                                </span>
+                                <span className="text-xs font-bold text-slate-700">
+                                  {item.courseCode}
+                                </span>
+                                {isNewlyAdded && (
+                                  <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
+                                    New
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-base leading-snug mt-1">
+                                {item.courseTitle}
+                              </h4>
                             </div>
-                          )}
-                        </div>
 
-                        {/* Card Action Buttons: EDIT (CR for own batch, or Admin) & DELETE (Admin only) */}
-                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            Batch: <strong>{item.batch}</strong>
-                          </span>
-
-                          <div className="flex items-center gap-1">
-                            {/* EDIT BUTTON */}
-                            {editable && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEdit(item)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                                title={isAdmin ? "Edit class (Admin)" : "Edit your batch's class"}
-                              >
-                                <Pencil className="w-3 h-3" />
-                                <span>Edit</span>
-                              </button>
-                            )}
-
-                            {/* DELETE BUTTON (Admin Only) */}
-                            {deletable && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDeleteTarget(item);
-                                  setDeleteError(null);
-                                }}
-                                className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                                title="Remove class (Admin only)"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-
-                            {!editable && !deletable && (
-                              <span className="text-[11px] text-slate-400 italic">View Only</span>
+                            {/* Reason / Note */}
+                            {item.reason && (
+                              <div className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 italic">
+                                Note: {item.reason}
+                              </div>
                             )}
                           </div>
+
+                          {/* Card Action Buttons */}
+                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              Batch: <strong>{item.batch}</strong>
+                            </span>
+
+                            <div className="flex items-center gap-1">
+                              {/* Copy WhatsApp Notice */}
+                              <button
+                                type="button"
+                                onClick={() => handleCopyNotice(item)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                title="Copy WhatsApp Notice"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* EDIT BUTTON */}
+                              {editable && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEdit(item)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                                  title={isAdmin ? "Edit class (Admin)" : "Edit your batch's class"}
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>Edit</span>
+                                </button>
+                              )}
+
+                              {/* DELETE BUTTON (Admin Only) */}
+                              {deletable && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeleteTarget(item);
+                                    setDeleteError(null);
+                                  }}
+                                  className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                                  title="Remove class (Admin only)"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {!editable && !deletable && (
+                                <span className="text-[11px] text-slate-400 italic">View Only</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -153,3 +153,21 @@ A web application designed for university class captains and department coordina
   - `POST`: Enforces that CRs can only create classes where `body.batch === session.batch`.
   - `PUT`: Enforces that CRs can only edit existing classes matching their batch.
   - `DELETE`: Admin has authority to remove any class; CRs are prevented from removing unauthorized classes.
+
+### [2026-11-04] - Compact Schedule Table Display Style
+- **Compact Schedule Table Layout**:
+  - Transformed the scheduled class display into a clean, space-efficient table with dedicated columns:
+    - **Time Slot**: Period indicator badge (P1, P2, etc.) and time label (`08:30 AM - 09:50 AM`).
+    - **Room**: Location pill badge (`Room 301`, `Lab 306`).
+    - **Course & Topic**: Course code, title, and optional reschedule reason/note.
+    - **Batch**: Distinct batch badge (`Batch 22-A`), with special emerald highlight for the logged-in CR's batch.
+    - **Actions**: One-click WhatsApp Notice copy button, Edit button (for batch CR / Admin), and Remove button (for Admin).
+- **Post-Creation Immediate Visual Feedback**:
+  - Automatically activates the Compact Table display upon class creation.
+  - Highlights newly added classes with a visual badge (`✨ Just Added`) and emerald glow for 6 seconds.
+- **Chronological Period Sorting**:
+  - Classes within each date row are automatically ordered chronologically by lecture period (Period 1 to Period 5).
+- **WhatsApp Share Integration**:
+  - Added individual class WhatsApp Notice generator and a full-day schedule copy button in the date header.
+- **View Mode Switcher**:
+  - Added an interactive switcher between **Compact Table** (default) and **Cards** view.

@@ -6,19 +6,6 @@ import { supabase, isSupabaseConfigured } from './supabase';
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'database.json');
 
-// Default CR Keys for the 9 department batches
-export const DEFAULT_BATCH_KEYS: Record<string, string> = {
-  '15': 'key-15',
-  '16': 'key-16',
-  '17': 'key-17',
-  '18': 'key-18',
-  '19': 'key-19',
-  '20': 'key-20',
-  '21': 'key-21',
-  '22-A': 'key-22a',
-  '22-B': 'key-22b',
-};
-
 // Returns today's date in YYYY-MM-DD format using local time
 export function getTodayDateString(): string {
   const now = new Date();
@@ -128,7 +115,11 @@ export async function getDatabase(): Promise<DatabaseFile> {
   const fallback = getLocalFallback();
 
   // Automatically prune yesterday's past classes to preserve storage
-  await cleanupPastReschedules();
+  try {
+    await cleanupPastReschedules();
+  } catch (err) {
+    console.error('Error during automatic past schedule cleanup:', err);
+  }
 
   if (isSupabaseConfigured && supabase) {
     try {
@@ -190,7 +181,6 @@ export async function addReschedule(data: {
   courseCode: string;
   courseTitle?: string;
   batch: string;
-  passcode: string;
   reason?: string;
 }): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
   const currentDb = await getDatabase();
@@ -210,10 +200,6 @@ export async function addReschedule(data: {
       error: `Invalid Batch! Please select one of the 9 department batches: ${VALID_BATCHES.join(', ')}.`,
     };
   }
-  if (!data.passcode || data.passcode.trim().length === 0) {
-    return { success: false, error: 'Batch CR Authentication Key is required.' };
-  }
-
   // 1. Room Allocation Conflict Check
   const roomConflict = currentDb.reschedules.find(
     r =>
@@ -263,7 +249,7 @@ export async function addReschedule(data: {
           course_code: courseCodeFormatted,
           course_title: courseTitleFormatted,
           batch: data.batch,
-          passcode: data.passcode.trim(),
+          passcode: '',
           reason: data.reason?.trim() || '',
           status: 'CONFIRMED',
         })
@@ -291,7 +277,7 @@ export async function addReschedule(data: {
     courseCode: courseCodeFormatted,
     courseTitle: courseTitleFormatted,
     batch: data.batch,
-    passcode: data.passcode.trim(),
+    passcode: '',
     reason: data.reason?.trim() || '',
     status: 'CONFIRMED',
     createdAt: new Date().toISOString(),
@@ -312,7 +298,6 @@ export async function updateReschedule(data: {
   courseCode: string;
   courseTitle?: string;
   batch: string;
-  passcode: string;
   reason?: string;
 }): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
   const currentDb = await getDatabase();
@@ -320,20 +305,6 @@ export async function updateReschedule(data: {
 
   if (!existing) {
     return { success: false, error: 'Rescheduled class not found.' };
-  }
-
-  // Authorize using the existing batch's passcode
-  const defaultKey = DEFAULT_BATCH_KEYS[existing.batch];
-  const isAuthorized =
-    existing.passcode.toLowerCase() === data.passcode.trim().toLowerCase() ||
-    (defaultKey && defaultKey.toLowerCase() === data.passcode.trim().toLowerCase()) ||
-    data.passcode.trim() === 'admin123';
-
-  if (!isAuthorized) {
-    return {
-      success: false,
-      error: `Authentication failed: Incorrect secret key for Batch ${existing.batch}.`,
-    };
   }
 
   const room = currentDb.rooms.find(r => r.id === data.roomId);
@@ -432,27 +403,13 @@ export async function updateReschedule(data: {
 }
 
 export async function deleteReschedule(
-  id: string,
-  passcode: string
+  id: string
 ): Promise<{ success: boolean; error?: string }> {
   const currentDb = await getDatabase();
   const booking = currentDb.reschedules.find(r => r.id === id);
 
   if (!booking) {
     return { success: false, error: 'Rescheduled class not found.' };
-  }
-
-  const defaultKey = DEFAULT_BATCH_KEYS[booking.batch];
-  const isAuthorized =
-    booking.passcode.toLowerCase() === passcode.trim().toLowerCase() ||
-    (defaultKey && defaultKey.toLowerCase() === passcode.trim().toLowerCase()) ||
-    passcode.trim() === 'admin123';
-
-  if (!isAuthorized) {
-    return {
-      success: false,
-      error: `Authentication failed: Incorrect key for Batch ${booking.batch}.`,
-    };
   }
 
   if (isSupabaseConfigured && supabase) {

@@ -33,7 +33,7 @@ export interface RescheduleBooking {
   courseCode: string;
   courseTitle: string;
   batch: ValidBatch | string;
-  passcode: string; // Batch CR secret authentication key
+  passcode: string; // Legacy database field; mutations are protected by admin session
   reason?: string;
   status: 'CONFIRMED' | 'CANCELLED';
   createdAt: string;

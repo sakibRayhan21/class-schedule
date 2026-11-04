@@ -25,6 +25,9 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+/data/admin-credentials.json
+/data/cr-credentials.json
+/data/*-credentials.json
 
 # typescript
 *.tsbuildinfo

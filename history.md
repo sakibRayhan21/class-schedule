@@ -130,3 +130,26 @@ A web application designed for university class captains and department coordina
   - Implemented `cleanupPastReschedules()` in [`lib/db.ts`](file:///d:/Project/Class%20schedule/lib/db.ts): Automatically deletes classes where `date < today`.
   - Added a **"Clean Past Records"** button in the header for on-demand manual cleanup (`DELETE /api/schedule?action=cleanup`).
   - Added a storage indicator banner informing users that auto-storage optimization is active.
+
+
+### [2026-11-04] - Role-Based Authentication: Batch CR Self-Management & Admin Global Authority
+- **Role-Based Access Control (RBAC)**:
+  - **Batch CRs**:
+    - Each of the 9 batches (`15`, `16`, `17`, `18`, `19`, `20`, `21`, `22-A`, `22-B`) has its own dedicated CR account.
+    - Usernames: `cr-15`, `cr-16`, ..., `cr-22a`, `cr-22b` (flexible alias matching for `15`, `22-A`, etc.).
+    - Default initial password: `cr123` (or legacy batch key `key-15`, `key-22a`).
+    - CRs authenticate via the **Sign In** modal and can change their password at any time.
+    - **CR Capabilities**: Can **Add Class** strictly for their own batch (batch selector locked), and **Edit Class** for their own batch. Cannot modify or tamper with other batches' classes.
+  - **Department Admin**:
+    - Username: `admin` (default password: `admin123`).
+    - **Admin Capabilities**: Global override authority — can **Edit** or **Remove** anyone's class, schedule classes for any batch, and trigger storage cleanups.
+  - **Students / Public**:
+    - Retains view-only access to the public reschedule board without requiring sign in.
+- **Security & Session Implementation**:
+  - Encrypted, tamper-proof session tokens signed using HMAC-SHA256 (`unischedule_session`).
+  - Scrypt password hashing with cryptographic salt and timing-safe equality comparison.
+  - Dual-tier credential persistence: Supabase `admin_credentials` and `cr_credentials` tables with local fallback in `data/*-credentials.json` (gitignored).
+- **Backend API Protection** ([`app/api/schedule/route.ts`](file:///d:/Project/Class%20schedule/app/api/schedule/route.ts)):
+  - `POST`: Enforces that CRs can only create classes where `body.batch === session.batch`.
+  - `PUT`: Enforces that CRs can only edit existing classes matching their batch.
+  - `DELETE`: Admin has authority to remove any class; CRs are prevented from removing unauthorized classes.

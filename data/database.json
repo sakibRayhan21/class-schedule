@@ -70,19 +70,5 @@
       "endTime": "16:30"
     }
   ],
-  "reschedules": [
-    {
-      "id": "resc-1792979283336-s5mz",
-      "date": "2026-10-26",
-      "slotId": "slot-1",
-      "roomId": "room-301",
-      "courseCode": "G",
-      "courseTitle": "g",
-      "batch": "22-A",
-      "passcode": "22-A",
-      "reason": "Makeup Class",
-      "status": "CONFIRMED",
-      "createdAt": "2026-10-26T01:48:03.336Z"
-    }
-  ]
+  "reschedules": []
 }

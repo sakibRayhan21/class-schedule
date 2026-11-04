@@ -25,16 +25,31 @@ CREATE TABLE IF NOT EXISTS public.reschedules (
   course_code TEXT NOT NULL,
   course_title TEXT,
   batch TEXT NOT NULL,
-  passcode TEXT NOT NULL,
+  passcode TEXT DEFAULT '',
   reason TEXT,
   status TEXT DEFAULT 'CONFIRMED',
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.admin_credentials (
+  id TEXT PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.cr_credentials (
+  batch TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 2. Enable Row Level Security (RLS)
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.time_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reschedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_credentials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cr_credentials ENABLE ROW LEVEL SECURITY;
 
 -- 3. Safely Drop Existing Policies (prevents 42710 policy already exists error)
 DROP POLICY IF EXISTS "Allow public read on rooms" ON public.rooms;
@@ -44,13 +59,27 @@ DROP POLICY IF EXISTS "Allow public insert on reschedules" ON public.reschedules
 DROP POLICY IF EXISTS "Allow public update on reschedules" ON public.reschedules;
 DROP POLICY IF EXISTS "Allow public delete on reschedules" ON public.reschedules;
 
+DROP POLICY IF EXISTS "Allow server read on admin_credentials" ON public.admin_credentials;
+DROP POLICY IF EXISTS "Allow server write on admin_credentials" ON public.admin_credentials;
+DROP POLICY IF EXISTS "Allow server read on cr_credentials" ON public.cr_credentials;
+DROP POLICY IF EXISTS "Allow server write on cr_credentials" ON public.cr_credentials;
+
 -- 4. Re-create Policies
+-- Public Read for Timetables and Rooms
 CREATE POLICY "Allow public read on rooms" ON public.rooms FOR SELECT USING (true);
 CREATE POLICY "Allow public read on time_slots" ON public.time_slots FOR SELECT USING (true);
 CREATE POLICY "Allow public read on reschedules" ON public.reschedules FOR SELECT USING (true);
+
+-- Backend Operations for Reschedules (Authorized via Next.js API route layer)
 CREATE POLICY "Allow public insert on reschedules" ON public.reschedules FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update on reschedules" ON public.reschedules FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete on reschedules" ON public.reschedules FOR DELETE USING (true);
+
+-- Backend Operations for Credentials (Authorized via Next.js API route layer)
+CREATE POLICY "Allow server read on admin_credentials" ON public.admin_credentials FOR SELECT USING (true);
+CREATE POLICY "Allow server write on admin_credentials" ON public.admin_credentials FOR ALL USING (true);
+CREATE POLICY "Allow server read on cr_credentials" ON public.cr_credentials FOR SELECT USING (true);
+CREATE POLICY "Allow server write on cr_credentials" ON public.cr_credentials FOR ALL USING (true);
 
 -- 5. Insert the 8 Rooms
 INSERT INTO public.rooms (id, name) VALUES

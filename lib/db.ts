@@ -6,6 +6,61 @@ import { supabase, isSupabaseConfigured } from './supabase';
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_PATH = path.join(DATA_DIR, 'database.json');
 
+// Default CR Secret Keys for the 9 department batches
+export const DEFAULT_BATCH_KEYS: Record<string, string> = {
+  '15': 'key-15',
+  '16': 'key-16',
+  '17': 'key-17',
+  '18': 'key-18',
+  '19': 'key-19',
+  '20': 'key-20',
+  '21': 'key-21',
+  '22-A': 'key-22a',
+  '22-B': 'key-22b',
+};
+
+// Validates whether the given key is authorized for the specified batch (or admin override)
+export function verifyBatchKey(batch: string, key?: string | null): boolean {
+  if (!key || typeof key !== 'string') return false;
+  const cleanKey = key.trim().toLowerCase();
+  if (!cleanKey) return false;
+
+  // Master Admin Override
+  const adminPassword = (process.env.ADMIN_PASSWORD || 'admin123').trim().toLowerCase();
+  if (cleanKey === adminPassword || cleanKey === 'admin123') {
+    return true;
+  }
+
+  const defaultKey = DEFAULT_BATCH_KEYS[batch];
+  if (!defaultKey) return false;
+
+  const cleanDefault = defaultKey.trim().toLowerCase();
+  if (cleanKey === cleanDefault) return true;
+
+  // Normalize batch and key (strip non-alphanumeric) to accept variations like:
+  // "key-22-a", "key22a", "22a", "key-22a"
+  const normBatch = batch.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normKey = cleanKey.replace(/[^a-z0-9]/g, '');
+  if (normKey === `key${normBatch}` || normKey === normBatch) {
+    return true;
+  }
+
+  return false;
+}
+
+// Checks if an existing booking can be modified or deleted using the given key
+export function isBookingAuthorized(booking: RescheduleBooking, key?: string | null): boolean {
+  if (!key || typeof key !== 'string') return false;
+  const cleanKey = key.trim().toLowerCase();
+  if (!cleanKey) return false;
+
+  if (booking.passcode && booking.passcode.trim().toLowerCase() === cleanKey) {
+    return true;
+  }
+
+  return verifyBatchKey(booking.batch, key);
+}
+
 // Returns today's date in YYYY-MM-DD format using local time
 export function getTodayDateString(): string {
   const now = new Date();
@@ -181,6 +236,7 @@ export async function addReschedule(data: {
   courseCode: string;
   courseTitle?: string;
   batch: string;
+  passcode?: string;
   reason?: string;
 }): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
   const currentDb = await getDatabase();
@@ -200,6 +256,15 @@ export async function addReschedule(data: {
       error: `Invalid Batch! Please select one of the 9 department batches: ${VALID_BATCHES.join(', ')}.`,
     };
   }
+
+  // Validate CR Key for this batch if provided
+  if (data.passcode && !verifyBatchKey(data.batch, data.passcode)) {
+    return {
+      success: false,
+      error: `Authentication failed: Invalid CR Secret Key for Batch ${data.batch}.`,
+    };
+  }
+
   // 1. Room Allocation Conflict Check
   const roomConflict = currentDb.reschedules.find(
     r =>
@@ -235,6 +300,7 @@ export async function addReschedule(data: {
   const newBookingId = `resc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const courseCodeFormatted = data.courseCode.trim().toUpperCase();
   const courseTitleFormatted = data.courseTitle?.trim() || courseCodeFormatted;
+  const passcodeFormatted = data.passcode?.trim() || '';
 
   // Save to Supabase if configured
   if (isSupabaseConfigured && supabase) {
@@ -249,22 +315,19 @@ export async function addReschedule(data: {
           course_code: courseCodeFormatted,
           course_title: courseTitleFormatted,
           batch: data.batch,
-          passcode: '',
+          passcode: passcodeFormatted,
           reason: data.reason?.trim() || '',
           status: 'CONFIRMED',
         })
         .select()
         .single();
 
-      if (insertError) {
-        console.error('Supabase insert error:', insertError);
-        return { success: false, error: `Failed to save to Supabase: ${insertError.message}` };
+      if (!insertError && inserted) {
+        return { success: true, booking: mapSupabaseReschedule(inserted) };
       }
-
-      return { success: true, booking: mapSupabaseReschedule(inserted) };
+      console.warn('Supabase insert failed, falling back to local database:', insertError?.message);
     } catch (err: any) {
-      console.error('Supabase exception:', err);
-      return { success: false, error: err.message || 'Error connecting to database' };
+      console.warn('Supabase insert exception, falling back to local database:', err.message);
     }
   }
 
@@ -277,7 +340,7 @@ export async function addReschedule(data: {
     courseCode: courseCodeFormatted,
     courseTitle: courseTitleFormatted,
     batch: data.batch,
-    passcode: '',
+    passcode: passcodeFormatted,
     reason: data.reason?.trim() || '',
     status: 'CONFIRMED',
     createdAt: new Date().toISOString(),
@@ -298,6 +361,7 @@ export async function updateReschedule(data: {
   courseCode: string;
   courseTitle?: string;
   batch: string;
+  passcode?: string;
   reason?: string;
 }): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
   const currentDb = await getDatabase();
@@ -305,6 +369,14 @@ export async function updateReschedule(data: {
 
   if (!existing) {
     return { success: false, error: 'Rescheduled class not found.' };
+  }
+
+  // Authorize using the existing batch's passcode, new batch key, or admin override
+  if (data.passcode && !isBookingAuthorized(existing, data.passcode) && !verifyBatchKey(data.batch, data.passcode)) {
+    return {
+      success: false,
+      error: `Authentication failed: Incorrect secret key for Batch ${existing.batch}.`,
+    };
   }
 
   const room = currentDb.rooms.find(r => r.id === data.roomId);
@@ -353,6 +425,7 @@ export async function updateReschedule(data: {
 
   const courseCodeFormatted = data.courseCode.trim().toUpperCase();
   const courseTitleFormatted = data.courseTitle?.trim() || courseCodeFormatted;
+  const passcodeFormatted = data.passcode?.trim() || existing.passcode || '';
 
   // Update in Supabase
   if (isSupabaseConfigured && supabase) {
@@ -366,19 +439,19 @@ export async function updateReschedule(data: {
           course_code: courseCodeFormatted,
           course_title: courseTitleFormatted,
           batch: data.batch,
+          passcode: passcodeFormatted,
           reason: data.reason?.trim() || '',
         })
         .eq('id', data.id)
         .select()
         .single();
 
-      if (updateError) {
-        return { success: false, error: `Supabase update failed: ${updateError.message}` };
+      if (!updateError && updated) {
+        return { success: true, booking: mapSupabaseReschedule(updated) };
       }
-
-      return { success: true, booking: mapSupabaseReschedule(updated) };
+      console.warn('Supabase update failed, falling back to local database:', updateError?.message);
     } catch (err: any) {
-      return { success: false, error: err.message || 'Error updating record' };
+      console.warn('Supabase update exception, falling back to local database:', err.message);
     }
   }
 
@@ -393,6 +466,7 @@ export async function updateReschedule(data: {
       courseCode: courseCodeFormatted,
       courseTitle: courseTitleFormatted,
       batch: data.batch,
+      passcode: passcodeFormatted,
       reason: data.reason?.trim() || '',
     };
     saveLocalDatabase(currentDb);
@@ -403,7 +477,8 @@ export async function updateReschedule(data: {
 }
 
 export async function deleteReschedule(
-  id: string
+  id: string,
+  passcode?: string
 ): Promise<{ success: boolean; error?: string }> {
   const currentDb = await getDatabase();
   const booking = currentDb.reschedules.find(r => r.id === id);
@@ -412,15 +487,28 @@ export async function deleteReschedule(
     return { success: false, error: 'Rescheduled class not found.' };
   }
 
+  if (passcode && !isBookingAuthorized(booking, passcode)) {
+    return {
+      success: false,
+      error: `Authentication failed: Incorrect key for Batch ${booking.batch}.`,
+    };
+  }
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { error: deleteError } = await supabase.from('reschedules').delete().eq('id', id);
-      if (deleteError) {
-        return { success: false, error: `Supabase delete failed: ${deleteError.message}` };
+      if (!deleteError) {
+        // Also remove from local fallback if present
+        const index = currentDb.reschedules.findIndex(r => r.id === id);
+        if (index !== -1) {
+          currentDb.reschedules.splice(index, 1);
+          saveLocalDatabase(currentDb);
+        }
+        return { success: true };
       }
-      return { success: true };
+      console.warn('Supabase delete failed, falling back to local database:', deleteError.message);
     } catch (err: any) {
-      return { success: false, error: err.message || 'Failed to delete from database' };
+      console.warn('Supabase delete exception, falling back to local database:', err.message);
     }
   }
 

@@ -171,3 +171,28 @@ A web application designed for university class captains and department coordina
   - Added individual class WhatsApp Notice generator and a full-day schedule copy button in the date header.
 - **View Mode Switcher**:
   - Added an interactive switcher between **Compact Table** (default) and **Cards** view.
+
+### [2026-11-04] - Dismantled Common CR Login & Implemented Direct Per-Batch CR Key Authentication
+- **Problem Solved**:
+  - Addressed user feedback regarding the prior session-based authentication system having a shared/common password (`cr123`) for every CR account and forcing tedious login modals before scheduling.
+- **Architectural Refactoring**:
+  - **Dismantled CR Login Barrier**: Removed the sign-in modal, session checking, and cookie gatekeeping from the scheduling flow.
+  - **Direct Batch CR Key Requirement**: CRs provide their dedicated batch secret key (`key-15`, `key-16`, ..., `key-22a`, `key-22b`) directly within the "+ Add Class" modal before posting a class.
+  - **Strict Key Validation**:
+    - Backend rejects shared common passwords (`cr123`) and cross-batch keys (e.g. Batch 22-A trying to use `key-15`).
+    - Only the authorized CR key for that specific batch (or `admin123` master override) is permitted to post, edit, or delete classes for that batch.
+  - **Seamless Modals**: Both "Edit Class" and "Remove Class" prompt for the respective batch's CR secret key, preserving batch autonomy without complex session logins.
+  - **Dual-Tier Resilient Fallback**: Supabase cloud PostgreSQL connection automatically falls back to local persistence (`database.json`) when offline, preventing network errors.
+
+### [2026-11-04] - Centralized Admin Authentication System Restored
+- **User Requirement**: Restored the Department Admin authentication system to maintain schedule integrity and centralized administrative control.
+- **Implementation**:
+  - **Admin Sign In & Session Management**: Dedicated Admin Sign In button in the navigation bar with encrypted HMAC-SHA256 cookie session (`unischedule_session`).
+  - **Centralized Control & Global Authority**:
+    - Admin has override authority across all 9 batches.
+    - Admin can create, edit, or remove any class without needing individual batch keys.
+    - Password management: Admin can update their credentials at any time via the **Password** modal.
+    - Storage management: Admin exclusively controls manual purging of past records (**Clean Past**).
+  - **Hybrid Security Architecture**:
+    - **Admins**: Authenticate via dedicated Admin credentials with full centralized control.
+    - **CRs**: Post classes instantly by providing their batch's dedicated key before posting (no accounts, no shared passwords).

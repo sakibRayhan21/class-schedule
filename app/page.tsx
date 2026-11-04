@@ -14,31 +14,14 @@ import {
   Shield,
   Sparkles,
   RefreshCw,
-  User,
   KeyRound,
-  LogOut,
-  Lock,
   Table as TableIcon,
   LayoutGrid,
   Copy,
+  LogOut,
+  Lock,
 } from 'lucide-react';
 import { Room, TimeSlot, RescheduleBooking, VALID_BATCHES, ValidBatch } from '@/lib/types';
-
-export type SessionUser =
-  | { role: 'admin'; username: string }
-  | { role: 'cr'; username: string; batch: ValidBatch };
-
-const CR_USERNAMES: Record<ValidBatch, string> = {
-  '15': 'cr-15',
-  '16': 'cr-16',
-  '17': 'cr-17',
-  '18': 'cr-18',
-  '19': 'cr-19',
-  '20': 'cr-20',
-  '21': 'cr-21',
-  '22-A': 'cr-22a',
-  '22-B': 'cr-22b',
-};
 
 // Returns local date formatted as YYYY-MM-DD
 function getLocalTodayString(): string {
@@ -55,16 +38,15 @@ export default function RescheduleHomePage() {
   const [reschedules, setReschedules] = useState<RescheduleBooking[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Authentication State
-  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  // Admin Authentication State (Centralized Control & Integrity)
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [loginUsername, setLoginUsername] = useState('cr-22a');
-  const [loginPassword, setLoginPassword] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
 
   // Add Class Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -74,6 +56,7 @@ export default function RescheduleHomePage() {
   const [courseCode, setCourseCode] = useState('');
   const [courseTitle, setCourseTitle] = useState('');
   const [batch, setBatch] = useState<ValidBatch>('22-A');
+  const [passcode, setPasscode] = useState('');
   const [reason, setReason] = useState('Makeup Class');
 
   // Edit Class Modal State
@@ -84,12 +67,14 @@ export default function RescheduleHomePage() {
   const [editCourseCode, setEditCourseCode] = useState('');
   const [editCourseTitle, setEditCourseTitle] = useState('');
   const [editBatch, setEditBatch] = useState<ValidBatch>('22-A');
+  const [editPasscode, setEditPasscode] = useState('');
   const [editReason, setEditReason] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
   const [editingSubmitting, setEditingSubmitting] = useState(false);
 
   // Delete Modal State
   const [deleteTarget, setDeleteTarget] = useState<RescheduleBooking | null>(null);
+  const [deletePasscode, setDeletePasscode] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingSubmitting, setDeletingSubmitting] = useState(false);
 
@@ -103,31 +88,25 @@ export default function RescheduleHomePage() {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
 
-  const isAdmin = currentUser?.role === 'admin';
-  const isCR = currentUser?.role === 'cr';
-
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
-  // Check Current Authentication Session
-  const checkAuth = async () => {
+  // Check Admin Authentication Session
+  const checkAdminSession = async () => {
     try {
       const res = await fetch('/api/auth');
       if (res.ok) {
         const data = await res.json();
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-          if (data.user.role === 'cr') {
-            setBatch(data.user.batch);
-          }
+        if (data.authenticated && data.user?.role === 'admin') {
+          setIsAdmin(true);
         } else {
-          setCurrentUser(null);
+          setIsAdmin(false);
         }
       }
     } catch {
-      setCurrentUser(null);
+      setIsAdmin(false);
     }
   };
 
@@ -158,7 +137,7 @@ export default function RescheduleHomePage() {
 
   useEffect(() => {
     fetchData();
-    checkAuth();
+    checkAdminSession();
   }, []);
 
   useEffect(() => {
@@ -166,8 +145,7 @@ export default function RescheduleHomePage() {
     if (timeSlots.length > 0 && !slotId) setSlotId(timeSlots[0].id);
   }, [rooms, timeSlots]);
 
-  // Group by Date & Sort within each date chronologically by slot period:
-  // A row appears on home screen if and only if it is added to reschedule!
+  // Group by Date & Sort chronologically by slot period
   const dateWiseRows = useMemo(() => {
     const map = new Map<string, RescheduleBooking[]>();
     for (const item of reschedules) {
@@ -218,7 +196,7 @@ export default function RescheduleHomePage() {
     }
   };
 
-  // Copy Single Class Notice for WhatsApp / Social
+  // WhatsApp Notice Generation
   const handleCopyNotice = async (item: RescheduleBooking) => {
     const room = getRoomName(item.roomId);
     const slot = getSlot(item.slotId);
@@ -253,7 +231,7 @@ export default function RescheduleHomePage() {
     }
   };
 
-  // Copy Full Day Schedule Notice for WhatsApp
+  // Copy Full Day Schedule
   const handleCopyDaySchedule = async (dateStr: string, bookings: RescheduleBooking[]) => {
     const dateFormatted = formatDateHeader(dateStr);
     const lines = [
@@ -284,28 +262,75 @@ export default function RescheduleHomePage() {
     }
   };
 
-  // Determine permissions for a specific class item
-  const canEditClass = (item: RescheduleBooking) => {
-    if (isAdmin) return true;
-    if (isCR && currentUser?.batch === item.batch) return true;
-    return false;
+  // Admin Sign In Handler
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminAuthError(null);
+    setAdminAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'admin',
+          password: adminPassword.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminAuthError(data.error || 'Authentication failed. Check your admin password.');
+        return;
+      }
+
+      setIsAdmin(true);
+      setIsAdminModalOpen(false);
+      setAdminPassword('');
+      showToast('🛡️ Signed in as Department Admin (Centralized Control Active)');
+    } catch {
+      setAdminAuthError('Network error during admin sign in.');
+    } finally {
+      setAdminAuthSubmitting(false);
+    }
   };
 
-  const canDeleteClass = () => {
-    return isAdmin;
+  // Admin Sign Out Handler
+  const handleAdminLogout = async () => {
+    await fetch('/api/auth', { method: 'DELETE' });
+    setIsAdmin(false);
+    showToast('Signed out of Admin Mode');
   };
 
-  // Open Add Class Modal with proper batch lock
+  // Admin Change Password Handler
+  const handleAdminPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminAuthError(null);
+    setAdminAuthSubmitting(true);
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminAuthError(data.error || 'Failed to update admin password.');
+        return;
+      }
+      setCurrentPassword('');
+      setNewPassword('');
+      setIsPasswordModalOpen(false);
+      showToast(data.message || 'Admin password updated successfully!');
+    } catch {
+      setAdminAuthError('Network error updating password.');
+    } finally {
+      setAdminAuthSubmitting(false);
+    }
+  };
+
+  // Open Add Class Modal
   const handleOpenAddModal = () => {
-    if (!currentUser) {
-      setAuthError('Please sign in with your CR or Admin credentials to schedule a class.');
-      setIsLoginModalOpen(true);
-      return;
-    }
     setErrorMsg(null);
-    if (currentUser.role === 'cr') {
-      setBatch(currentUser.batch);
-    }
+    setPasscode('');
     setIsAddModalOpen(true);
   };
 
@@ -313,8 +338,6 @@ export default function RescheduleHomePage() {
   const handleAddClass = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-
-    const targetBatch = isCR && currentUser ? currentUser.batch : batch;
 
     if (!date) {
       setErrorMsg('Please select a date.');
@@ -326,6 +349,14 @@ export default function RescheduleHomePage() {
     }
     if (!roomId) {
       setErrorMsg('Please select a room.');
+      return;
+    }
+    if (!batch) {
+      setErrorMsg('Please select a batch.');
+      return;
+    }
+    if (!isAdmin && !passcode.trim()) {
+      setErrorMsg(`Please enter the CR Key for Batch ${batch} before posting.`);
       return;
     }
     if (!courseCode.trim()) {
@@ -344,7 +375,8 @@ export default function RescheduleHomePage() {
           roomId,
           courseCode: courseCode.trim(),
           courseTitle: courseTitle.trim() || courseCode.trim(),
-          batch: targetBatch,
+          batch,
+          passcode: isAdmin ? (passcode.trim() || 'admin123') : passcode.trim(),
           reason: reason.trim(),
         }),
       });
@@ -356,28 +388,25 @@ export default function RescheduleHomePage() {
         return;
       }
 
-      // Track newly added class to highlight it in the schedule table
+      // Track newly added class to highlight it
       if (data.booking?.id) {
         setNewlyAddedId(data.booking.id);
         setTimeout(() => setNewlyAddedId(null), 6000);
       }
 
-      // Ensure table view is active to show the compact schedule style
       setViewMode('table');
 
-      // Success
       try {
         const confetti = (await import('canvas-confetti')).default;
         confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
-      } catch {
-        // Fallback gracefully if confetti fails to load
-      }
-      showToast(`🎉 Class scheduled for Batch ${targetBatch}!`);
+      } catch {}
+
+      showToast(`🎉 Class scheduled for Batch ${batch}!`);
       setIsAddModalOpen(false);
 
-      // Reset
       setCourseCode('');
       setCourseTitle('');
+      setPasscode('');
       setReason('');
 
       fetchData();
@@ -389,18 +418,8 @@ export default function RescheduleHomePage() {
     }
   };
 
-  // Open Edit Modal with Prepopulated Values
+  // Open Edit Modal
   const handleOpenEdit = (item: RescheduleBooking) => {
-    if (!currentUser) {
-      setAuthError('Please sign in to edit classes.');
-      setIsLoginModalOpen(true);
-      return;
-    }
-    if (!canEditClass(item)) {
-      showToast(`⚠️ Only Batch ${item.batch} CR or Admin can edit this class.`);
-      return;
-    }
-
     setEditTarget(item);
     setEditDate(item.date);
     setEditSlotId(item.slotId);
@@ -409,6 +428,7 @@ export default function RescheduleHomePage() {
     setEditCourseTitle(item.courseTitle);
     setEditBatch((item.batch as ValidBatch) || '22-A');
     setEditReason(item.reason || '');
+    setEditPasscode('');
     setEditError(null);
   };
 
@@ -418,7 +438,10 @@ export default function RescheduleHomePage() {
     if (!editTarget) return;
     setEditError(null);
 
-    const targetBatch = isCR && currentUser ? currentUser.batch : editBatch;
+    if (!isAdmin && !editPasscode.trim()) {
+      setEditError(`Please enter the CR key for Batch ${editTarget.batch} to authorize changes.`);
+      return;
+    }
 
     setEditingSubmitting(true);
     try {
@@ -432,7 +455,8 @@ export default function RescheduleHomePage() {
           roomId: editRoomId,
           courseCode: editCourseCode.trim(),
           courseTitle: editCourseTitle.trim() || editCourseCode.trim(),
-          batch: targetBatch,
+          batch: editBatch,
+          passcode: isAdmin ? (editPasscode.trim() || 'admin123') : editPasscode.trim(),
           reason: editReason.trim(),
         }),
       });
@@ -446,6 +470,7 @@ export default function RescheduleHomePage() {
 
       showToast('✏️ Class updated successfully!');
       setEditTarget(null);
+      setEditPasscode('');
       fetchData();
     } catch (err) {
       console.error(err);
@@ -455,24 +480,41 @@ export default function RescheduleHomePage() {
     }
   };
 
-  // Delete Rescheduled Class (Admin Only)
+  // Open Delete Modal
+  const handleOpenDelete = (item: RescheduleBooking) => {
+    setDeleteTarget(item);
+    setDeletePasscode('');
+    setDeleteError(null);
+  };
+
+  // Confirm Delete Rescheduled Class
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
+
+    if (!isAdmin && !deletePasscode.trim()) {
+      setDeleteError(`Please enter the CR key for Batch ${deleteTarget.batch}.`);
+      return;
+    }
+
     setDeletingSubmitting(true);
     try {
+      const passcodeParam = isAdmin ? (deletePasscode.trim() || 'admin123') : deletePasscode.trim();
       const res = await fetch(
-        `/api/schedule?id=${encodeURIComponent(deleteTarget.id)}`,
+        `/api/schedule?id=${encodeURIComponent(deleteTarget.id)}&passcode=${encodeURIComponent(
+          passcodeParam
+        )}`,
         { method: 'DELETE' }
       );
       const data = await res.json();
 
       if (!res.ok) {
-        setDeleteError(data.error || 'Failed to delete class.');
+        setDeleteError(data.error || 'Authentication failed: Incorrect key.');
         return;
       }
 
       showToast('🗑️ Rescheduled class removed');
       setDeleteTarget(null);
+      setDeletePasscode('');
       setDeleteError(null);
       fetchData();
     } catch (err) {
@@ -483,80 +525,14 @@ export default function RescheduleHomePage() {
     }
   };
 
-  // Sign in as CR or Admin
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthSubmitting(true);
-    try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: loginUsername.trim(),
-          password: loginPassword.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAuthError(data.error || 'Unable to sign in.');
-        return;
-      }
-
-      setCurrentUser(data.user);
-      setIsLoginModalOpen(false);
-      setLoginPassword('');
-
-      if (data.user.role === 'admin') {
-        showToast('🛡️ Signed in as Department Admin');
-      } else {
-        setBatch(data.user.batch);
-        showToast(`🎓 Signed in as CR for Batch ${data.user.batch}`);
-      }
-    } catch {
-      setAuthError('Network error signing in.');
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-
-  // Sign out
-  const handleLogout = async () => {
-    await fetch('/api/auth', { method: 'DELETE' });
-    setCurrentUser(null);
-    setIsPasswordModalOpen(false);
-    showToast('Signed out successfully');
-  };
-
-  // Password Change
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthSubmitting(true);
-    try {
-      const res = await fetch('/api/auth', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAuthError(data.error || 'Unable to update password.');
-        return;
-      }
-      setCurrentPassword('');
-      setNewPassword('');
-      setIsPasswordModalOpen(false);
-      showToast(data.message || 'Password updated successfully!');
-    } catch {
-      setAuthError('Network error updating password.');
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-
-  // Manual Trigger to Purge Past Classes (Admin Only)
+  // Manual Trigger to Purge Past Classes (Admin Controlled)
   const handlePurgePast = async () => {
+    if (!isAdmin) {
+      setAdminAuthError('Admin authentication is required to perform database storage cleanup.');
+      setIsAdminModalOpen(true);
+      return;
+    }
+
     if (!confirm("Clean up yesterday's and older past classes from database?")) return;
     try {
       setCleaning(true);
@@ -597,49 +573,49 @@ export default function RescheduleHomePage() {
                 Class Reschedule Board
               </h1>
               <p className="text-xs text-slate-500">
-                Department Class Captain Portal • 9 Batches • Room Conflict Shield
+                Department Portal • 9 Batches • Centralized Admin & Room Conflict Shield
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {currentUser ? (
+            {/* Admin Control Bar */}
+            {isAdmin ? (
               <>
-                {/* User Identity Pill */}
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700">
-                  {isAdmin ? (
-                    <>
-                      <Shield className="w-3.5 h-3.5 text-indigo-600" />
-                      <span className="text-indigo-900 font-bold">Admin</span>
-                    </>
-                  ) : (
-                    <>
-                      <User className="w-3.5 h-3.5 text-emerald-600" />
-                      <span className="text-emerald-900 font-bold">CR • Batch {currentUser.batch}</span>
-                    </>
-                  )}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-900">
+                  <Shield className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Admin Mode</span>
                 </div>
 
-                {/* Change Password */}
                 <button
                   type="button"
                   onClick={() => {
-                    setAuthError(null);
+                    setAdminAuthError(null);
                     setIsPasswordModalOpen(true);
                   }}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-200 transition-colors cursor-pointer"
-                  title="Change Password"
+                  title="Change Admin Password"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Password</span>
                 </button>
 
-                {/* Sign Out */}
                 <button
                   type="button"
-                  onClick={handleLogout}
+                  onClick={handlePurgePast}
+                  disabled={cleaning}
+                  title="Automatically purge past dates to save database storage"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${cleaning ? 'animate-spin' : ''}`} />
+                  <span className="hidden md:inline">Clean Past</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAdminLogout}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-600 font-semibold text-xs border border-slate-200 hover:border-red-200 transition-colors cursor-pointer"
-                  title="Sign out"
+                  title="Sign out of Admin Mode"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>Sign out</span>
@@ -649,31 +625,18 @@ export default function RescheduleHomePage() {
               <button
                 type="button"
                 onClick={() => {
-                  setAuthError(null);
-                  setIsLoginModalOpen(true);
+                  setAdminAuthError(null);
+                  setIsAdminModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs"
+                title="Department Admin Authentication"
               >
-                <User className="w-3.5 h-3.5 text-emerald-400" />
-                <span>CR / Admin Sign In</span>
+                <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Admin Sign In</span>
               </button>
             )}
 
-            {/* Storage Saver Clean Button (Admin Only) */}
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={handlePurgePast}
-                disabled={cleaning}
-                title="Automatically purge past dates to save database storage"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-all cursor-pointer border border-slate-200"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${cleaning ? 'animate-spin' : ''}`} />
-                <span className="hidden md:inline">Clean Past Records</span>
-              </button>
-            )}
-
-            {/* Add Class Button (CR & Admin) */}
+            {/* Add Class Button */}
             <button
               type="button"
               onClick={handleOpenAddModal}
@@ -688,33 +651,7 @@ export default function RescheduleHomePage() {
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-6">
-        {/* Banner with Role & Feasibility Notice */}
-        <div className="bg-gradient-to-r from-emerald-800 to-teal-800 text-white rounded-3xl p-6 sm:p-7 shadow-lg relative overflow-hidden">
-          <div className="max-w-2xl space-y-2 relative z-10">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-700/80 border border-emerald-500/30 text-xs font-semibold text-emerald-200">
-              <Shield className="w-3.5 h-3.5" />
-              {isAdmin ? (
-                <span>Admin Mode • Full Authority to Edit or Remove Any Class</span>
-              ) : isCR ? (
-                <span>CR Mode • Authorized to Add & Edit Classes for Batch {currentUser.batch}</span>
-              ) : (
-                <span>Public View • Sign in with your CR or Admin account to schedule or edit</span>
-              )}
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Date-Wise Rescheduled Classes
-            </h2>
-            <p className="text-sm text-emerald-100/90 leading-relaxed">
-              When a class is rescheduled, its date row appears below. Rooms are protected against duplicate booking.
-            </p>
-            <div className="pt-2 flex items-center gap-2 text-xs text-emerald-200">
-              <Sparkles className="w-4 h-4 text-emerald-300" />
-              <span>
-                <strong>Auto Storage Saver Active:</strong> Past classes are automatically cleared to keep your cloud database fast and storage-efficient.
-              </span>
-            </div>
-          </div>
-        </div>
+        
 
         {/* DATE-WISE ROWS */}
         {loading ? (
@@ -730,7 +667,7 @@ export default function RescheduleHomePage() {
             <div className="space-y-1">
               <h3 className="text-lg font-bold text-slate-800">No Rescheduled Classes Scheduled</h3>
               <p className="text-sm text-slate-500 max-w-md mx-auto">
-                No active reschedules. {currentUser ? 'Click Add Class above to allocate a room.' : 'Sign in as your Batch CR or Admin to schedule classes.'}
+                No active reschedules. Click Add Class above to allocate a room using your CR key or Admin privileges.
               </p>
             </div>
             <button
@@ -748,23 +685,23 @@ export default function RescheduleHomePage() {
               <div>
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <span>Rescheduled Schedule</span>
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                    {reschedules.length}
+                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    {reschedules.filter(r => r.status === 'CONFIRMED' || !r.status).length} Total Classes
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Organized by date and lecture period
+                  Ordered chronologically by lecture periods
                 </p>
               </div>
 
-              {/* View Mode Switcher (Compact Table as primary, Cards as alternate) */}
-              <div className="inline-flex items-center p-1 bg-slate-200/80 rounded-2xl self-start sm:self-auto border border-slate-300/60 shadow-2xs">
+              {/* View Mode Switcher */}
+              <div className="inline-flex p-1 rounded-xl bg-slate-200/80 border border-slate-300/60 self-start sm:self-auto">
                 <button
                   type="button"
                   onClick={() => setViewMode('table')}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     viewMode === 'table'
-                      ? 'bg-white text-emerald-700 shadow-xs'
+                      ? 'bg-white text-emerald-800 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -774,9 +711,9 @@ export default function RescheduleHomePage() {
                 <button
                   type="button"
                   onClick={() => setViewMode('cards')}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     viewMode === 'cards'
-                      ? 'bg-white text-emerald-700 shadow-xs'
+                      ? 'bg-white text-emerald-800 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
@@ -786,46 +723,43 @@ export default function RescheduleHomePage() {
               </div>
             </div>
 
-            {/* RENDER EACH DATE */}
-            {dateWiseRows.map(([rowDate, rowBookings]) => (
+            {/* RENDER DATES */}
+            {dateWiseRows.map(([dateStr, rowBookings]) => (
               <div
-                key={rowDate}
-                className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden"
+                key={dateStr}
+                className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden transition-all duration-200 hover:shadow-md"
               >
-                {/* Date Row Header */}
-                <div className="bg-slate-100/85 px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                {/* DATE ROW HEADER */}
+                <div className="px-5 sm:px-6 py-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-800">
                   <div className="flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-sm shrink-0">
-                      <Calendar className="w-4 h-4 text-emerald-700" />
-                    </span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0 font-bold">
+                      <Calendar className="w-4 h-4" />
+                    </div>
                     <div>
-                      <h3 className="font-bold text-base sm:text-lg text-slate-900">
-                        {formatDateHeader(rowDate)}
+                      <h3 className="font-extrabold text-base sm:text-lg tracking-tight text-white">
+                        {formatDateHeader(dateStr)}
                       </h3>
-                      <span className="text-xs text-slate-500 font-medium">
-                        Date: {rowDate}
-                      </span>
+                      <p className="text-xs text-slate-400 font-mono">
+                        {dateStr} • {rowBookings.length} {rowBookings.length === 1 ? 'class' : 'classes'} scheduled
+                      </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {/* Share Full Day Button */}
                     <button
                       type="button"
-                      onClick={() => handleCopyDaySchedule(rowDate, rowBookings)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 hover:text-emerald-700 text-xs font-semibold border border-slate-200 transition-colors cursor-pointer shadow-2xs"
+                      onClick={() => handleCopyDaySchedule(dateStr, rowBookings)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold border border-slate-700 hover:border-emerald-500/40 transition-all cursor-pointer"
                       title="Copy full day schedule for WhatsApp"
                     >
                       <Copy className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Copy Day Notice</span>
+                      <span>Copy Day Notice</span>
                     </button>
-
-                    <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      {rowBookings.length} {rowBookings.length === 1 ? 'Class' : 'Classes'}
-                    </span>
                   </div>
                 </div>
 
-                {/* COMPACT TABLE DISPLAY STYLE */}
+                {/* VIEW MODE 1: COMPACT SCHEDULE TABLE */}
                 {viewMode === 'table' ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[620px]">
@@ -840,10 +774,7 @@ export default function RescheduleHomePage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs sm:text-sm">
                         {rowBookings.map(item => {
-                          const editable = canEditClass(item);
-                          const deletable = canDeleteClass();
                           const slot = getSlot(item.slotId);
-                          const isMine = isCR && currentUser?.batch === item.batch;
                           const isNewlyAdded = item.id === newlyAddedId;
 
                           return (
@@ -852,8 +783,6 @@ export default function RescheduleHomePage() {
                               className={`transition-all duration-300 group ${
                                 isNewlyAdded
                                   ? 'bg-emerald-100/80 ring-2 ring-emerald-500 ring-inset'
-                                  : isMine
-                                  ? 'bg-emerald-50/30 hover:bg-emerald-50/60'
                                   : 'hover:bg-slate-50/80'
                               }`}
                             >
@@ -911,13 +840,7 @@ export default function RescheduleHomePage() {
 
                               {/* BATCH COLUMN */}
                               <td className="py-3.5 px-4 sm:px-6 align-middle text-center">
-                                <span
-                                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap ${
-                                    isMine
-                                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300 ring-1 ring-emerald-300'
-                                      : 'bg-slate-100 text-slate-700 border-slate-200'
-                                  }`}
-                                >
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border whitespace-nowrap bg-emerald-50 text-emerald-900 border-emerald-200">
                                   Batch {item.batch}
                                 </span>
                               </td>
@@ -936,36 +859,25 @@ export default function RescheduleHomePage() {
                                   </button>
 
                                   {/* Edit Button */}
-                                  {editable && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEdit(item)}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                                      title={isAdmin ? "Edit class (Admin)" : "Edit your batch's class"}
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                      <span className="hidden lg:inline">Edit</span>
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEdit(item)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                                    title={isAdmin ? "Edit class (Admin Authority)" : "Edit class (CR key required)"}
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                    <span className="hidden lg:inline">Edit</span>
+                                  </button>
 
                                   {/* Delete Button */}
-                                  {deletable && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setDeleteTarget(item);
-                                        setDeleteError(null);
-                                      }}
-                                      className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                                      title="Remove class (Admin only)"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-
-                                  {!editable && !deletable && (
-                                    <span className="text-[11px] text-slate-400 italic">View Only</span>
-                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDelete(item)}
+                                    className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                                    title={isAdmin ? "Remove class (Admin Authority)" : "Remove class (CR key required)"}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -978,8 +890,6 @@ export default function RescheduleHomePage() {
                   /* CARDS DISPLAY STYLE (ALTERNATE VIEW) */
                   <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {rowBookings.map(item => {
-                      const editable = canEditClass(item);
-                      const deletable = canDeleteClass();
                       const isNewlyAdded = item.id === newlyAddedId;
 
                       return (
@@ -988,8 +898,6 @@ export default function RescheduleHomePage() {
                           className={`bg-slate-50/70 border rounded-2xl p-4.5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 ${
                             isNewlyAdded
                               ? 'border-emerald-500 ring-2 ring-emerald-500/80 bg-emerald-50/60'
-                              : isCR && currentUser?.batch === item.batch
-                              ? 'border-emerald-300 ring-1 ring-emerald-200/50 bg-emerald-50/20'
                               : 'border-slate-200 hover:border-emerald-300'
                           }`}
                         >
@@ -1052,36 +960,25 @@ export default function RescheduleHomePage() {
                               </button>
 
                               {/* EDIT BUTTON */}
-                              {editable && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEdit(item)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                                  title={isAdmin ? "Edit class (Admin)" : "Edit your batch's class"}
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                  <span>Edit</span>
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(item)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                                title={isAdmin ? "Edit class (Admin Authority)" : "Edit class (CR key required)"}
+                              >
+                                <Pencil className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
 
-                              {/* DELETE BUTTON (Admin Only) */}
-                              {deletable && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setDeleteTarget(item);
-                                    setDeleteError(null);
-                                  }}
-                                  className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                                  title="Remove class (Admin only)"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-
-                              {!editable && !deletable && (
-                                <span className="text-[11px] text-slate-400 italic">View Only</span>
-                              )}
+                              {/* DELETE BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDelete(item)}
+                                className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                                title={isAdmin ? "Remove class (Admin Authority)" : "Remove class (CR key required)"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1095,7 +992,7 @@ export default function RescheduleHomePage() {
         )}
       </main>
 
-      {/* MODAL 1: ADD CLASS */}
+      {/* MODAL 1: ADD RESCHEDULED CLASS */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-150">
@@ -1123,32 +1020,59 @@ export default function RescheduleHomePage() {
                 </div>
               )}
 
-              {/* Batch Selection / Lock */}
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Department Batch *
-                </label>
-                {isCR && currentUser ? (
-                  <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl px-3 py-2">
-                    <span className="text-xs font-bold text-slate-900">Batch {currentUser.batch}</span>
-                    <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-md flex items-center gap-1">
-                      <Lock className="w-2.5 h-2.5" />
-                      Locked to your CR account
-                    </span>
+              {/* CR Batch & Key Section */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>{isAdmin ? 'Admin Scheduling Authority' : 'CR Batch Authentication *'}</span>
                   </div>
-                ) : (
-                  <select
-                    value={batch}
-                    onChange={e => setBatch(e.target.value as ValidBatch)}
-                    className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {VALID_BATCHES.map(b => (
-                      <option key={b} value={b}>
-                        Batch {b}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                  {isAdmin ? (
+                    <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+                      Admin Override Active
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-emerald-700 font-medium">Each batch has its own key</span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Select Batch *
+                    </label>
+                    <select
+                      value={batch}
+                      onChange={e => setBatch(e.target.value as ValidBatch)}
+                      className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      {VALID_BATCHES.map(b => (
+                        <option key={b} value={b}>
+                          Batch {b}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      {isAdmin ? 'CR Key (Optional for Admin)' : `CR Key for Batch ${batch} *`}
+                    </label>
+                    <input
+                      type="password"
+                      required={!isAdmin}
+                      placeholder={isAdmin ? 'Admin override active' : `e.g. key-${batch.toLowerCase()}`}
+                      value={passcode}
+                      onChange={e => setPasscode(e.target.value)}
+                      className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  {isAdmin
+                    ? 'As Admin, you can post classes directly for any batch.'
+                    : 'Provide your batch\'s CR secret key before posting. No shared common password.'}
+                </p>
               </div>
 
               {/* Date & Time Slot */}
@@ -1295,31 +1219,51 @@ export default function RescheduleHomePage() {
                 </div>
               )}
 
-              {/* Batch Info */}
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
-                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                  Batch
-                </label>
-                {isAdmin ? (
-                  <select
-                    value={editBatch}
-                    onChange={e => setEditBatch(e.target.value as ValidBatch)}
-                    className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  >
-                    {VALID_BATCHES.map(b => (
-                      <option key={b} value={b}>
-                        Batch {b}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="flex items-center justify-between bg-white border border-emerald-300 rounded-xl px-3 py-2">
-                    <span className="text-xs font-bold text-slate-900">Batch {editTarget.batch}</span>
-                    <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-md">
-                      Your Batch
-                    </span>
+              {/* Batch & Authorization */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-900">
+                    <KeyRound className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>{isAdmin ? 'Admin Override Authority' : 'CR Authorization *'}</span>
                   </div>
-                )}
+                  {isAdmin && (
+                    <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
+                      Admin Control
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Batch
+                    </label>
+                    <select
+                      value={editBatch}
+                      onChange={e => setEditBatch(e.target.value as ValidBatch)}
+                      className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      {VALID_BATCHES.map(b => (
+                        <option key={b} value={b}>
+                          Batch {b}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      {isAdmin ? 'CR Key (Optional for Admin)' : `CR Key for Batch ${editTarget.batch} *`}
+                    </label>
+                    <input
+                      type="password"
+                      required={!isAdmin}
+                      placeholder={isAdmin ? 'Admin override active' : `Secret key for Batch ${editTarget.batch}`}
+                      value={editPasscode}
+                      onChange={e => setEditPasscode(e.target.value)}
+                      className="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Date & Time Slot */}
@@ -1435,7 +1379,7 @@ export default function RescheduleHomePage() {
         </div>
       )}
 
-      {/* MODAL 3: DELETE CLASS (Admin Only) */}
+      {/* MODAL 3: DELETE CLASS */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -1445,7 +1389,9 @@ export default function RescheduleHomePage() {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 text-base">Remove Rescheduled Class</h3>
-                <p className="text-xs text-slate-500">Release the allocated room (Admin Action)</p>
+                <p className="text-xs text-slate-500">
+                  {isAdmin ? 'Admin Global Authority' : 'Release allocated room'}
+                </p>
               </div>
             </div>
 
@@ -1459,6 +1405,22 @@ export default function RescheduleHomePage() {
             {deleteError && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-xl font-medium">
                 {deleteError}
+              </div>
+            )}
+
+            {!isAdmin && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Enter CR Secret Key for Batch {deleteTarget.batch}:
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="CR Secret Key"
+                  value={deletePasscode}
+                  onChange={e => setDeletePasscode(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
               </div>
             )}
 
@@ -1476,143 +1438,85 @@ export default function RescheduleHomePage() {
                 onClick={handleConfirmDelete}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 active:bg-red-800 text-white cursor-pointer shadow-sm transition-all"
               >
-                {deletingSubmitting ? 'Removing...' : 'Confirm Remove'}
+                {deletingSubmitting ? 'Removing...' : (isAdmin ? 'Confirm Remove (Admin)' : 'Confirm Remove')}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 4: SIGN IN (CR & Admin) */}
-      {isLoginModalOpen && (
+      {/* MODAL 4: ADMIN SIGN IN */}
+      {isAdminModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <form
-            onSubmit={handleLogin}
+            onSubmit={handleAdminLogin}
             className="bg-white rounded-3xl max-w-md w-full shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
           >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                  <User className="w-5 h-5 text-emerald-700" />
+                <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center font-bold">
+                  <Shield className="w-5 h-5 text-indigo-700" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">CR & Admin Sign In</h3>
-                  <p className="text-xs text-slate-500">Authenticate to add or edit classes</p>
+                  <h3 className="font-bold text-slate-900 text-base">Department Admin Sign In</h3>
+                  <p className="text-xs text-slate-500">Centralized control and management authority</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsLoginModalOpen(false)}
+                onClick={() => setIsAdminModalOpen(false)}
                 className="p-1 text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {authError && (
+            {adminAuthError && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-3 rounded-xl flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <span>{authError}</span>
+                <span>{adminAuthError}</span>
               </div>
             )}
 
-            {/* Quick Batch Selection Chips */}
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-semibold text-slate-600">
-                Quick Select Batch / Role:
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {VALID_BATCHES.map(b => {
-                  const targetUsername = CR_USERNAMES[b] || `cr-${b}`;
-                  const isSelected = loginUsername.toLowerCase() === targetUsername.toLowerCase();
-                  return (
-                    <button
-                      key={b}
-                      type="button"
-                      onClick={() => setLoginUsername(targetUsername)}
-                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      Batch {b}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => setLoginUsername('admin')}
-                  className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all cursor-pointer ${
-                    loginUsername.toLowerCase() === 'admin'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-200 hover:bg-slate-300 text-slate-800'
-                  }`}
-                >
-                  Admin
-                </button>
-              </div>
-            </div>
-
-            {/* Username Input */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Username *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. cr-22a, cr-15, or admin"
-                value={loginUsername}
-                onChange={e => setLoginUsername(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            {/* Password Input */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Password *
+                Admin Password *
               </label>
               <input
                 type="password"
                 required
-                placeholder="Enter password"
-                value={loginPassword}
-                onChange={e => setLoginPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder="Enter admin password"
+                value={adminPassword}
+                onChange={e => setAdminPassword(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <p className="text-[11px] text-slate-400 mt-1">
-                Default CR password: <code className="text-slate-600 font-mono">cr123</code> (or your batch key). Admin: <code className="text-slate-600 font-mono">admin123</code>.
+                Default password: <code className="text-slate-600 font-mono">admin123</code> (or your custom ADMIN_PASSWORD).
               </p>
             </div>
 
             <button
               type="submit"
-              disabled={authSubmitting}
-              className="w-full px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer shadow-md shadow-emerald-600/20 transition-all"
+              disabled={adminAuthSubmitting}
+              className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold cursor-pointer shadow-md shadow-indigo-600/20 transition-all"
             >
-              {authSubmitting ? 'Signing in...' : 'Sign In'}
+              {adminAuthSubmitting ? 'Authenticating...' : 'Sign In as Admin'}
             </button>
           </form>
         </div>
       )}
 
-      {/* MODAL 5: CHANGE PASSWORD */}
-      {isPasswordModalOpen && currentUser && (
+      {/* MODAL 5: CHANGE ADMIN PASSWORD */}
+      {isPasswordModalOpen && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <form
-            onSubmit={handlePasswordChange}
+            onSubmit={handleAdminPasswordChange}
             className="bg-white rounded-3xl max-w-sm w-full shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
           >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Change Password</h3>
-                <p className="text-xs text-slate-500">
-                  {currentUser.role === 'admin'
-                    ? 'Updating Department Admin password'
-                    : `Updating Batch ${currentUser.batch} CR password`}
-                </p>
+                <h3 className="font-bold text-slate-900 text-base">Change Admin Password</h3>
+                <p className="text-xs text-slate-500">Update Department Admin master credentials</p>
               </div>
               <button
                 type="button"
@@ -1623,9 +1527,9 @@ export default function RescheduleHomePage() {
               </button>
             </div>
 
-            {authError && (
+            {adminAuthError && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-xl">
-                {authError}
+                {adminAuthError}
               </div>
             )}
 
@@ -1639,7 +1543,7 @@ export default function RescheduleHomePage() {
                 placeholder="Current password"
                 value={currentPassword}
                 onChange={e => setCurrentPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
@@ -1651,19 +1555,19 @@ export default function RescheduleHomePage() {
                 type="password"
                 required
                 minLength={6}
-                placeholder="New password (min 6 characters)"
+                placeholder="New password (min 6 chars)"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             <button
               type="submit"
-              disabled={authSubmitting}
-              className="w-full px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold cursor-pointer shadow-md transition-all"
+              disabled={adminAuthSubmitting}
+              className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold cursor-pointer shadow-md transition-all"
             >
-              {authSubmitting ? 'Updating...' : 'Update Password'}
+              {adminAuthSubmitting ? 'Updating...' : 'Update Password'}
             </button>
           </form>
         </div>

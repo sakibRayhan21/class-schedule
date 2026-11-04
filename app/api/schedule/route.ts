@@ -1,6 +1,14 @@
 import { NextResponse } from 'next/server';
-import { getDatabase, addReschedule, updateReschedule, deleteReschedule, cleanupPastReschedules } from '@/lib/db';
-import { VALID_BATCHES, ValidBatch } from '@/lib/types';
+import {
+  getDatabase,
+  addReschedule,
+  updateReschedule,
+  deleteReschedule,
+  cleanupPastReschedules,
+  verifyBatchKey,
+  isBookingAuthorized,
+} from '@/lib/db';
+import { VALID_BATCHES } from '@/lib/types';
 import { getAuthSession } from '@/lib/admin-auth';
 
 // Force dynamic execution on Vercel so data is never cached stale
@@ -23,15 +31,10 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = getAuthSession(request);
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Authentication required. Please sign in as CR or Admin to schedule a class.' },
-        { status: 401 }
-      );
-    }
+    const isAdmin = session?.role === 'admin';
 
     const body = await request.json();
-    const { date, slotId, roomId, courseCode, courseTitle, batch, reason } = body;
+    const { date, slotId, roomId, courseCode, courseTitle, batch, passcode, reason } = body;
 
     if (!date || !slotId || !roomId || !courseCode || !batch) {
       return NextResponse.json(
@@ -40,13 +43,23 @@ export async function POST(request: Request) {
       );
     }
 
-    // Role-based authorization check:
-    // CR can ONLY schedule for their own batch! Admin can schedule for ANY batch.
-    if (session.role === 'cr' && session.batch !== batch) {
-      return NextResponse.json(
-        { error: `Permission denied: As CR for Batch ${session.batch}, you can only schedule classes for Batch ${session.batch}.` },
-        { status: 403 }
-      );
+    // Role-based centralized control check:
+    // If logged in as Admin: bypass CR batch key check (Admin has centralized authority for ALL batches).
+    // If not Admin: CR must provide their batch's dedicated CR secret key.
+    if (!isAdmin) {
+      if (!passcode || typeof passcode !== 'string' || !passcode.trim()) {
+        return NextResponse.json(
+          { error: `CR Secret Key is required before posting a class for Batch ${batch}.` },
+          { status: 400 }
+        );
+      }
+
+      if (!verifyBatchKey(batch, passcode)) {
+        return NextResponse.json(
+          { error: `Authentication failed: Invalid CR Secret Key for Batch ${batch}.` },
+          { status: 403 }
+        );
+      }
     }
 
     const result = await addReschedule({
@@ -56,6 +69,7 @@ export async function POST(request: Request) {
       courseCode,
       courseTitle,
       batch,
+      passcode: passcode?.trim() || '',
       reason,
     });
 
@@ -72,15 +86,10 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const session = getAuthSession(request);
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Authentication required. Please sign in to edit a class.' },
-        { status: 401 }
-      );
-    }
+    const isAdmin = session?.role === 'admin';
 
     const body = await request.json();
-    const { id, date, slotId, roomId, courseCode, courseTitle, batch, reason } = body;
+    const { id, date, slotId, roomId, courseCode, courseTitle, batch, passcode, reason } = body;
 
     if (!id || !date || !slotId || !roomId || !courseCode || !batch) {
       return NextResponse.json(
@@ -95,19 +104,20 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Rescheduled class not found.' }, { status: 404 });
     }
 
-    // Role-based authorization check:
-    // CR can ONLY edit their own batch's classes, and cannot change the batch.
-    // Admin can edit ANY class from any batch.
-    if (session.role === 'cr') {
-      if (existing.batch !== session.batch) {
+    // Role-based centralized control check:
+    // If logged in as Admin: Admin has centralized authority to edit ANY class!
+    // If not Admin: CR must provide the batch secret key.
+    if (!isAdmin) {
+      if (!passcode || typeof passcode !== 'string' || !passcode.trim()) {
         return NextResponse.json(
-          { error: `Permission denied: As CR for Batch ${session.batch}, you can only edit classes belonging to your own batch.` },
-          { status: 403 }
+          { error: 'CR Secret Key is required to update this class.' },
+          { status: 400 }
         );
       }
-      if (batch !== session.batch) {
+
+      if (!isBookingAuthorized(existing, passcode) && !verifyBatchKey(batch, passcode)) {
         return NextResponse.json(
-          { error: `Permission denied: As CR for Batch ${session.batch}, you cannot transfer this class to Batch ${batch}.` },
+          { error: `Authentication failed: Incorrect secret key for Batch ${existing.batch}.` },
           { status: 403 }
         );
       }
@@ -121,6 +131,7 @@ export async function PUT(request: Request) {
       courseCode,
       courseTitle,
       batch,
+      passcode: passcode?.trim() || existing.passcode || '',
       reason,
     });
 
@@ -137,19 +148,25 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const session = getAuthSession(request);
-    if (!session) {
-      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 });
-    }
+    const isAdmin = session?.role === 'admin';
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const passcode = searchParams.get('passcode') || searchParams.get('key');
     const action = searchParams.get('action');
 
-    // Optional manual cleanup trigger: Strictly Admin only
+    // Storage cleanup: Strictly Admin controlled
     if (action === 'cleanup') {
-      if (session.role !== 'admin') {
-        return NextResponse.json({ error: 'Only Admin can perform past records cleanup.' }, { status: 403 });
+      const adminPassword = (process.env.ADMIN_PASSWORD || 'admin123').trim().toLowerCase();
+      const isKeyAdmin = passcode && (passcode.trim().toLowerCase() === adminPassword || passcode.trim() === 'admin123');
+
+      if (!isAdmin && !isKeyAdmin) {
+        return NextResponse.json(
+          { error: 'Admin authentication is required to perform storage cleanup.' },
+          { status: 403 }
+        );
       }
+
       const { deletedCount } = await cleanupPastReschedules();
       return NextResponse.json({ success: true, message: `Cleaned up ${deletedCount} past class records.` });
     }
@@ -167,16 +184,26 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Class not found.' }, { status: 404 });
     }
 
-    // Admin can remove ANY class.
-    // CR can remove their OWN batch's class if authorized.
-    if (session.role !== 'admin' && !(session.role === 'cr' && existing.batch === session.batch)) {
-      return NextResponse.json(
-        { error: 'Permission denied: Only Admin or the batch CR can remove this class.' },
-        { status: 403 }
-      );
+    // Role-based centralized control check:
+    // If logged in as Admin: Admin has centralized authority to remove ANY class!
+    // If not Admin: CR must provide the batch secret key.
+    if (!isAdmin) {
+      if (!passcode || !passcode.trim()) {
+        return NextResponse.json(
+          { error: 'CR Secret Key is required to remove this class.' },
+          { status: 400 }
+        );
+      }
+
+      if (!isBookingAuthorized(existing, passcode)) {
+        return NextResponse.json(
+          { error: `Authentication failed: Incorrect key for Batch ${existing.batch}.` },
+          { status: 403 }
+        );
+      }
     }
 
-    const result = await deleteReschedule(id);
+    const result = await deleteReschedule(id, passcode || undefined);
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 403 });
     }

@@ -43,15 +43,31 @@ git push origin main
 
 ---
 
-## 🔑 Default Credentials (Out of the Box)
-- **Admin**:
-  - Username: `admin`
-  - Default Password: `admin123` (or whatever set in `ADMIN_PASSWORD`)
-- **Class Representatives (CRs)**:
-  - Usernames: `cr-15`, `cr-16`, `cr-17`, `cr-18`, `cr-19`, `cr-20`, `cr-21`, `cr-22a`, `cr-22b` (also accepts `15`, `22-A`, etc.)
-  - Default Password: `cr123` (or `key-15`, `key-22a`)
-- **Password Changes**:
-  - Any logged-in CR or Admin can change their password at any time via the **Password** button in the top navigation.
+## 🔑 Centralized Admin Control & Batch CR Access
+
+### 🛡️ 1. Department Admin Authentication System (Centralized Control)
+- **Centralized Control & System Integrity**:
+  - Click **"Admin Sign In"** in the top navigation bar.
+  - Default Credentials: Username: `admin`, Password: `admin123` (or custom `ADMIN_PASSWORD` in `.env.local` / Vercel).
+  - **Full Override Authority**: Once signed in as Admin:
+    - Global edit & remove authority over all batches without needing individual batch keys.
+    - Centralized scheduling for any batch.
+    - Password management: Click **"Password"** in the navigation bar to update the master Admin password.
+    - Database Storage Cleanup: Trigger **"Clean Past"** records to purge yesterday's expired entries.
+
+### 🎓 2. Batch CR Keys (Direct Action Authentication — No Shared Passwords)
+- **Instant Scheduling (No Sign-In Account Barrier)**:
+  - CRs do **not** need an account login or shared common password.
+  - Simply click **"+ Add Class"**, pick your batch, and enter your batch's dedicated CR secret key before posting:
+    - `Batch 15`: `key-15`
+    - `Batch 16`: `key-16`
+    - `Batch 17`: `key-17`
+    - `Batch 18`: `key-18`
+    - `Batch 19`: `key-19`
+    - `Batch 20`: `key-20`
+    - `Batch 21`: `key-21`
+    - `Batch 22-A`: `key-22a`
+    - `Batch 22-B`: `key-22b`
 
 ---
 

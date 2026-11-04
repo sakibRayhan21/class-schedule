@@ -552,7 +552,7 @@ export default function RescheduleHomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16">
+    <div className="flex-1 flex flex-col bg-slate-50 text-slate-800 font-sans pb-12">
       {/* Toast Alert */}
       {toastMsg && (
         <div className="fixed top-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl border border-slate-700 animate-in fade-in slide-in-from-top-4">

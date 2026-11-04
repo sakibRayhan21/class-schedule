@@ -196,3 +196,10 @@ A web application designed for university class captains and department coordina
   - **Hybrid Security Architecture**:
     - **Admins**: Authenticate via dedicated Admin credentials with full centralized control.
     - **CRs**: Post classes instantly by providing their batch's dedicated key before posting (no accounts, no shared passwords).
+
+### [2026-11-04] - Global Dedicated Footer Added
+- **Global Footer**:
+  - Implemented a sticky-bottom global footer across all pages via the root layout (`app/layout.tsx`).
+  - Displays the attribution text:
+    `"All credit goes to the King AI Agents and his friend Sakib Rayhan"`
+  - Styled with border separation, centered responsive typography, and subtle sparkle accents.

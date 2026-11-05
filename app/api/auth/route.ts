@@ -5,27 +5,55 @@ import {
   changeCrPassword,
   createSessionToken,
   getAuthSession,
+  getAuthSessionDetails,
   getSessionCookieName,
+  DEFAULT_SESSION_DURATION_SECONDS,
+  EXTENDED_SESSION_DURATION_SECONDS,
 } from '@/lib/admin-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const session = getAuthSession(request);
-  if (!session) {
-    return NextResponse.json({ authenticated: false, user: null });
+  const details = getAuthSessionDetails(request);
+  if (!details || details.isExpired) {
+    const response = NextResponse.json({
+      authenticated: false,
+      user: null,
+      expired: details?.isExpired ?? false,
+      message: details?.isExpired ? 'Admin session has ended. Please sign in again.' : 'Not authenticated.',
+    });
+
+    // Proactively clear cookie if expired
+    if (details?.isExpired) {
+      response.cookies.set(getSessionCookieName(), '', {
+        httpOnly: true,
+        maxAge: 0,
+        expires: new Date(0),
+        path: '/',
+      });
+      response.cookies.set('unischedule_admin_session', '', {
+        httpOnly: true,
+        maxAge: 0,
+        expires: new Date(0),
+        path: '/',
+      });
+    }
+
+    return response;
   }
 
   return NextResponse.json({
     authenticated: true,
-    user: session,
+    user: details.user,
+    expiresAt: details.expiresAt,
+    remainingSeconds: details.remainingSeconds,
   });
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { username, password } = body;
+    const { username, password, rememberMe } = body;
 
     // For backwards compatibility: if only password is provided, assume admin
     const usernameInput = typeof username === 'string' && username.trim().length > 0 ? username : 'admin';
@@ -39,14 +67,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: authResult.error || 'Authentication failed.' }, { status: 401 });
     }
 
-    const token = createSessionToken(authResult.user);
-    const response = NextResponse.json({ success: true, user: authResult.user });
+    // Determine session lifetime: 7 days if "rememberMe" requested, otherwise standard 2-hour session
+    const durationSeconds = rememberMe ? EXTENDED_SESSION_DURATION_SECONDS : DEFAULT_SESSION_DURATION_SECONDS;
+    const token = createSessionToken(authResult.user, durationSeconds);
+    const expiresAt = Date.now() + durationSeconds * 1000;
+
+    const response = NextResponse.json({
+      success: true,
+      user: authResult.user,
+      expiresAt,
+      durationSeconds,
+      sessionType: rememberMe ? 'persistent' : 'session',
+    });
 
     response.cookies.set(getSessionCookieName(), token, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: durationSeconds,
       path: '/',
     });
 
@@ -90,8 +128,18 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE() {
-  const response = NextResponse.json({ success: true });
-  response.cookies.set(getSessionCookieName(), '', { httpOnly: true, maxAge: 0, path: '/' });
-  response.cookies.set('unischedule_admin_session', '', { httpOnly: true, maxAge: 0, path: '/' });
+  const response = NextResponse.json({ success: true, message: 'Signed out successfully.' });
+  response.cookies.set(getSessionCookieName(), '', {
+    httpOnly: true,
+    maxAge: 0,
+    expires: new Date(0),
+    path: '/',
+  });
+  response.cookies.set('unischedule_admin_session', '', {
+    httpOnly: true,
+    maxAge: 0,
+    expires: new Date(0),
+    path: '/',
+  });
   return response;
 }

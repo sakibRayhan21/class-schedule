@@ -14,6 +14,12 @@ const CR_CREDENTIALS_PATH = path.join(process.cwd(), 'data', 'cr-credentials.jso
 const SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || 'development-session-secret-class-schedule-2026';
 const INITIAL_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'adminKYAU';
 
+// Admin session lifetime configurations
+export const DEFAULT_SESSION_DURATION_SECONDS =
+  Number(process.env.ADMIN_SESSION_MAX_AGE_SECONDS) || 2 * 60 * 60; // 2 hours (7200 seconds)
+export const EXTENDED_SESSION_DURATION_SECONDS = 7 * 24 * 60 * 60; // 7 days (604800 seconds)
+export const IDLE_TIMEOUT_SECONDS = 30 * 60; // 30 minutes of inactivity
+
 export type SessionUser =
   | { role: 'admin'; username: string }
   | { role: 'cr'; username: string; batch: ValidBatch };
@@ -210,15 +216,38 @@ export function resolveBatchFromUsername(input: string): ValidBatch | null {
   return match || null;
 }
 
-// ---------------- Session Signing ----------------
+// ---------------- Session Signing & Expiration ----------------
 function sign(value: string): string {
   return crypto.createHmac('sha256', SESSION_SECRET).update(value).digest('base64url');
 }
 
-export function createSessionToken(user: SessionUser): string {
-  const payloadData = {
+export interface SessionTokenPayload {
+  role: 'admin' | 'cr';
+  username: string;
+  batch?: ValidBatch;
+  issuedAt: number;
+  expiresAt: number;
+  nonce: string;
+}
+
+export interface SessionDetails {
+  user: SessionUser;
+  issuedAt: number;
+  expiresAt: number;
+  remainingSeconds: number;
+  isExpired: boolean;
+}
+
+export function createSessionToken(
+  user: SessionUser,
+  durationSeconds: number = DEFAULT_SESSION_DURATION_SECONDS
+): string {
+  const now = Date.now();
+  const expiresAt = now + Math.max(60, durationSeconds) * 1000;
+  const payloadData: SessionTokenPayload = {
     ...user,
-    issuedAt: Date.now(),
+    issuedAt: now,
+    expiresAt,
     nonce: crypto.randomBytes(8).toString('hex'),
   };
   const payload = Buffer.from(JSON.stringify(payloadData)).toString('base64url');
@@ -226,7 +255,7 @@ export function createSessionToken(user: SessionUser): string {
   return `${payload}.${signature}`;
 }
 
-export function getSessionFromToken(token: string | undefined): SessionUser | null {
+export function getSessionDetailsFromToken(token: string | undefined): SessionDetails | null {
   if (!token) return null;
   const decoded = decodeURIComponent(token);
   const separator = decoded.lastIndexOf('.');
@@ -246,30 +275,64 @@ export function getSessionFromToken(token: string | undefined): SessionUser | nu
   try {
     const raw = Buffer.from(payload, 'base64url').toString('utf8');
     const data = JSON.parse(raw);
+    const now = Date.now();
 
-    if (data.role === 'admin') {
-      return { role: 'admin', username: data.username || 'admin' };
+    // Calculate expiration timestamp
+    let expiresAt: number;
+    let issuedAt = typeof data.issuedAt === 'number' ? data.issuedAt : now;
+
+    if (typeof data.expiresAt === 'number') {
+      expiresAt = data.expiresAt;
+    } else if (typeof data.issuedAt === 'number') {
+      // Legacy token without explicit expiresAt: default to 2 hours from issue
+      expiresAt = data.issuedAt + DEFAULT_SESSION_DURATION_SECONDS * 1000;
+    } else {
+      // Untimed legacy token: expire immediately for safety
+      expiresAt = now;
     }
-    if (data.role === 'cr' && data.batch && VALID_BATCHES.includes(data.batch)) {
-      return {
+
+    const isExpired = now >= expiresAt;
+    const remainingSeconds = Math.max(0, Math.floor((expiresAt - now) / 1000));
+
+    let user: SessionUser | null = null;
+    if (data.role === 'admin') {
+      user = { role: 'admin', username: data.username || 'admin' };
+    } else if (data.role === 'cr' && data.batch && VALID_BATCHES.includes(data.batch)) {
+      user = {
         role: 'cr',
         username: data.username || CR_ACCOUNTS[data.batch as ValidBatch] || `cr-${data.batch}`,
         batch: data.batch,
       };
     }
-  } catch {
-    // If legacy format (timestamp:hex.sig), treat as admin
-    return { role: 'admin', username: 'admin' };
-  }
 
-  return null;
+    if (!user) return null;
+
+    return {
+      user,
+      issuedAt,
+      expiresAt,
+      remainingSeconds,
+      isExpired,
+    };
+  } catch {
+    // If legacy format fails parsing, treat as expired
+    return null;
+  }
+}
+
+export function getSessionFromToken(token: string | undefined): SessionUser | null {
+  const details = getSessionDetailsFromToken(token);
+  if (!details || details.isExpired) {
+    return null;
+  }
+  return details.user;
 }
 
 export function getSessionCookieName(): string {
   return COOKIE_NAME;
 }
 
-export function getAuthSession(request: Request): SessionUser | null {
+export function getAuthSessionDetails(request: Request): SessionDetails | null {
   const cookie = request.headers.get('cookie') || '';
   const token = cookie
     .split(';')
@@ -277,7 +340,15 @@ export function getAuthSession(request: Request): SessionUser | null {
     .find(v => v.startsWith(`${COOKIE_NAME}=`) || v.startsWith(`${LEGACY_COOKIE_NAME}=`))
     ?.split('=')[1];
 
-  return getSessionFromToken(token);
+  return getSessionDetailsFromToken(token);
+}
+
+export function getAuthSession(request: Request): SessionUser | null {
+  const details = getAuthSessionDetails(request);
+  if (!details || details.isExpired) {
+    return null;
+  }
+  return details.user;
 }
 
 // Legacy helper for routes that only check admin

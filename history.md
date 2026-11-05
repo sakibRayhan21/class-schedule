@@ -203,3 +203,20 @@ A web application designed for university class captains and department coordina
   - Displays the attribution text:
     `"All credit goes to the King AI Agents and his friend Sakib Rayhan"`
   - Styled with border separation, centered responsive typography, and subtle sparkle accents.
+
+### [2026-11-05] - Admin Authentication Session Lifecycle & Automatic Logout
+- **Problem Solved**:
+  - Previously, admin session cookies lacked explicit expiration checks and persisted for 7 days without auto-logout when sessions ended or users remained idle.
+- **Session Expiration & Lifecycle Engine** ([`lib/admin-auth.ts`](file:///d:/Project/Class%20schedule/lib/admin-auth.ts)):
+  - **Cryptographic Expiration Validation**: Session tokens contain explicit `expiresAt` timestamps verified via HMAC-SHA256 signatures. Expired tokens are automatically invalidated on the server.
+  - **Default Session Lifespan**: Standard 2-hour duration (`DEFAULT_SESSION_DURATION_SECONDS = 7200s`) or browser session.
+  - **Session Details API**: Exported `getSessionDetailsFromToken()` and `getAuthSessionDetails()` returning active remaining seconds and expiration state.
+- **Authentication Route Updates** ([`app/api/auth/route.ts`](file:///d:/Project/Class%20schedule/app/api/auth/route.ts)):
+  - `GET`: Returns remaining session seconds and proactively clears expired cookies from the client browser.
+  - `POST`: Supports standard session (2-hour auto-expiring session cookie) and optional 7-day extended session (`rememberMe`).
+  - `DELETE`: Explicitly invalidates session cookies with `maxAge: 0` and epoch zero expiration dates.
+- **Client Auto-Logout & Session UI** ([`app/page.tsx`](file:///d:/Project/Class%20schedule/app/page.tsx)):
+  - **Inactivity Tracker**: Listens to user interactions and automatically logs out admins after 30 minutes of inactivity (`IDLE_TIMEOUT_MS = 30m`).
+  - **Real-Time Session Countdown Badge**: Live countdown timer pill in the header navigation bar (`⏳ 1h 59m` / `04:32`) that transitions to a flashing amber warning when under 5 minutes remain.
+  - **Visibility Change & Heartbeat Sync**: Auto-checks session validity whenever the user switches back to the tab or periodically every 60 seconds.
+  - **API 401 Interception**: Automatically resets admin state and prompts sign-in whenever an admin mutation fails due to session expiry.

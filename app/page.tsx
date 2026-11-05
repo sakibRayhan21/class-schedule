@@ -48,6 +48,9 @@ export default function RescheduleHomePage() {
   const [newPassword, setNewPassword] = useState('');
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
   const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
+  const [sessionRemaining, setSessionRemaining] = useState<number | null>(null);
+  const [rememberMe, setRememberMe] = useState(false);
+  const lastActivityRef = React.useRef<number>(Date.now());
 
   // Add Class Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -94,22 +97,134 @@ export default function RescheduleHomePage() {
     setTimeout(() => setToastMsg(null), 3500);
   };
 
+  // Format remaining seconds into human-readable time (e.g. 1h 45m or 04:32)
+  const formatSessionTime = (seconds: number | null): string => {
+    if (seconds === null || seconds <= 0) return '00:00';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Admin Sign Out Handler (Manual, Inactivity, or Session Expiration)
+  const handleAdminLogout = async (reason: 'manual' | 'inactivity' | 'expired' = 'manual') => {
+    try {
+      await fetch('/api/auth', { method: 'DELETE' });
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+    setIsAdmin(false);
+    setSessionRemaining(null);
+
+    if (reason === 'inactivity') {
+      showToast('⚠️ Admin session ended due to 30 minutes of inactivity. You have been logged out.');
+    } else if (reason === 'expired') {
+      showToast('⏳ Admin session ended. You have been automatically logged out.');
+    } else {
+      showToast('Signed out of Admin Mode');
+    }
+    fetchData();
+  };
+
   // Check Admin Authentication Session
-  const checkAdminSession = async () => {
+  const checkAdminSession = async (silent = false) => {
     try {
       const res = await fetch('/api/auth');
       if (res.ok) {
         const data = await res.json();
         if (data.authenticated && data.user?.role === 'admin') {
           setIsAdmin(true);
+          if (typeof data.remainingSeconds === 'number') {
+            setSessionRemaining(data.remainingSeconds);
+          }
+          return true;
         } else {
-          setIsAdmin(false);
+          setIsAdmin(prev => {
+            if (prev && !silent) {
+              showToast(data.expired ? '⏳ Admin session ended. You have been logged out.' : 'Signed out of Admin Mode');
+            }
+            return false;
+          });
+          setSessionRemaining(null);
+          return false;
         }
+      } else {
+        setIsAdmin(false);
+        setSessionRemaining(null);
+        return false;
       }
     } catch {
       setIsAdmin(false);
+      setSessionRemaining(null);
+      return false;
     }
   };
+
+  // User activity tracker & auto-logout on session expiration or 30-min inactivity
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    lastActivityRef.current = Date.now();
+
+    // Reset user activity timestamp on interaction (throttled to every 3 seconds)
+    let lastRecorded = 0;
+    const onUserActivity = () => {
+      const now = Date.now();
+      if (now - lastRecorded > 3000) {
+        lastRecorded = now;
+        lastActivityRef.current = now;
+      }
+    };
+
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach(evt => window.addEventListener(evt, onUserActivity, { passive: true }));
+
+    // Heartbeat & Countdown Timer (runs every second while admin is logged in)
+    let secondsCounter = 0;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      secondsCounter += 1;
+
+      // 1. Inactivity check (30 minutes = 1800000 ms)
+      const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+      if (now - lastActivityRef.current > IDLE_TIMEOUT_MS) {
+        handleAdminLogout('inactivity');
+        return;
+      }
+
+      // 2. Decrement remaining session time
+      setSessionRemaining(prev => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          handleAdminLogout('expired');
+          return 0;
+        }
+        return prev - 1;
+      });
+
+      // 3. Periodic server sync (every 60 seconds)
+      if (secondsCounter % 60 === 0) {
+        checkAdminSession(true);
+      }
+    }, 1000);
+
+    // 4. Tab visibility change: re-verify with server immediately upon returning to tab
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAdminSession(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      activityEvents.forEach(evt => window.removeEventListener(evt, onUserActivity));
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      clearInterval(timer);
+    };
+  }, [isAdmin]);
 
   // Fetch Schedule Data
   const fetchData = async () => {
@@ -297,6 +412,7 @@ export default function RescheduleHomePage() {
         body: JSON.stringify({
           username: 'admin',
           password: adminPassword.trim(),
+          rememberMe,
         }),
       });
       const data = await res.json();
@@ -306,23 +422,23 @@ export default function RescheduleHomePage() {
       }
 
       setIsAdmin(true);
+      if (typeof data.durationSeconds === 'number') {
+        setSessionRemaining(data.durationSeconds);
+      }
+      lastActivityRef.current = Date.now();
       setIsAdminModalOpen(false);
       setAdminPassword('');
-      showToast('🛡️ Signed in as Department Admin (Centralized Control Active)');
+      showToast(
+        rememberMe
+          ? '🛡️ Signed in as Department Admin (7-Day Persistent Session)'
+          : '🛡️ Signed in as Department Admin (Active Session - Auto-Logout on Session End)'
+      );
       fetchData();
     } catch {
       setAdminAuthError('Network error during admin sign in.');
     } finally {
       setAdminAuthSubmitting(false);
     }
-  };
-
-  // Admin Sign Out Handler
-  const handleAdminLogout = async () => {
-    await fetch('/api/auth', { method: 'DELETE' });
-    setIsAdmin(false);
-    showToast('Signed out of Admin Mode');
-    fetchData();
   };
 
   // Admin Change Password Handler
@@ -408,6 +524,14 @@ export default function RescheduleHomePage() {
 
       const data = await res.json();
 
+      if (res.status === 401 || (isAdmin && res.status === 403 && data.error?.includes('Admin'))) {
+        setIsAdmin(false);
+        setSessionRemaining(null);
+        showToast('⚠️ Admin session ended. Please sign in again.');
+        setIsAdminModalOpen(true);
+        return;
+      }
+
       if (!res.ok) {
         setErrorMsg(data.error || 'Failed to add class.');
         return;
@@ -490,6 +614,14 @@ export default function RescheduleHomePage() {
 
       const data = await res.json();
 
+      if (res.status === 401 || (isAdmin && res.status === 403 && data.error?.includes('Admin'))) {
+        setIsAdmin(false);
+        setSessionRemaining(null);
+        showToast('⚠️ Admin session ended. Please sign in again.');
+        setIsAdminModalOpen(true);
+        return;
+      }
+
       if (!res.ok) {
         setEditError(data.error || 'Failed to update class.');
         return;
@@ -534,6 +666,14 @@ export default function RescheduleHomePage() {
       );
       const data = await res.json();
 
+      if (res.status === 401 || (isAdmin && res.status === 403 && data.error?.includes('Admin'))) {
+        setIsAdmin(false);
+        setSessionRemaining(null);
+        showToast('⚠️ Admin session ended. Please sign in again.');
+        setIsAdminModalOpen(true);
+        return;
+      }
+
       if (!res.ok) {
         setDeleteError(data.error || 'Authentication failed: Incorrect key.');
         return;
@@ -565,6 +705,15 @@ export default function RescheduleHomePage() {
       setCleaning(true);
       const res = await fetch('/api/schedule?action=cleanup', { method: 'DELETE' });
       const data = await res.json();
+
+      if (res.status === 401 || res.status === 403) {
+        setIsAdmin(false);
+        setSessionRemaining(null);
+        showToast('⚠️ Admin session ended. Please sign in again.');
+        setIsAdminModalOpen(true);
+        return;
+      }
+
       if (res.ok) {
         showToast(`🧹 ${data.message || 'Past records cleaned up!'}`);
         fetchData();
@@ -614,6 +763,21 @@ export default function RescheduleHomePage() {
                   <span>Admin Mode</span>
                 </div>
 
+                {/* Session Countdown Pill */}
+                {sessionRemaining !== null && (
+                  <div
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                      sessionRemaining < 300
+                        ? 'bg-amber-50 border-amber-300 text-amber-800 animate-pulse'
+                        : 'bg-slate-100 border-slate-200 text-slate-700'
+                    }`}
+                    title={`Admin session expires in ${formatSessionTime(sessionRemaining)} (Auto-logout applies after 30 min idle or session end)`}
+                  >
+                    <Clock className={`w-3.5 h-3.5 ${sessionRemaining < 300 ? 'text-amber-600' : 'text-slate-500'}`} />
+                    <span className="font-mono text-[11px]">{formatSessionTime(sessionRemaining)}</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
@@ -640,7 +804,7 @@ export default function RescheduleHomePage() {
 
                 <button
                   type="button"
-                  onClick={handleAdminLogout}
+                  onClick={() => handleAdminLogout('manual')}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-700 hover:text-red-600 font-semibold text-xs border border-slate-200 hover:border-red-200 transition-colors cursor-pointer"
                   title="Sign out of Admin Mode"
                 >
@@ -1545,6 +1709,27 @@ export default function RescheduleHomePage() {
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Default password: <code className="text-slate-600 font-mono">admin123</code> (or your custom ADMIN_PASSWORD).
+              </p>
+            </div>
+
+            {/* Session Expiration & Auto-Logout Notice */}
+            <div className="pt-2 border-t border-slate-100">
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-700 hover:text-slate-900">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={e => setRememberMe(e.target.checked)}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                />
+                <span className="font-semibold">Keep me signed in for 7 days</span>
+              </label>
+              <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1.5 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <Clock className="w-3.5 h-3.5 shrink-0 text-indigo-600 mt-0.5" />
+                <span>
+                  {rememberMe
+                    ? 'Extended 7-day session active. For security, idle auto-logout applies after 30 minutes of inactivity.'
+                    : 'Standard session: automatically logs out when the session ends (2 hours), on browser close, or after 30 minutes of inactivity.'}
+                </span>
               </p>
             </div>
 

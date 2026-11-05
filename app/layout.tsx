@@ -12,8 +12,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="antialiased selection:bg-emerald-500 selection:text-white flex flex-col min-h-screen">
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className="antialiased selection:bg-emerald-500 selection:text-white flex flex-col min-h-screen"
+        suppressHydrationWarning
+      >
         <div className="flex-1 flex flex-col">
           {children}
         </div>

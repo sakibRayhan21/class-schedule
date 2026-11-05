@@ -92,11 +92,12 @@ function getLocalFallback(): DatabaseFile {
       { id: 'lab-308', name: 'Lab 308' },
     ],
     timeSlots: [
-      { id: 'slot-1', period: 1, label: '08:30 AM - 09:50 AM', startTime: '08:30', endTime: '09:50' },
-      { id: 'slot-2', period: 2, label: '09:50 AM - 11:10 AM', startTime: '09:50', endTime: '11:10' },
-      { id: 'slot-3', period: 3, label: '11:10 AM - 12:30 PM', startTime: '11:10', endTime: '12:30' },
-      { id: 'slot-4', period: 4, label: '01:50 PM - 03:10 PM', startTime: '13:50', endTime: '15:10' },
-      { id: 'slot-5', period: 5, label: '03:10 PM - 04:30 PM', startTime: '15:10', endTime: '16:30' },
+      { id: 'slot-1', period: 1, label: '08:35 AM - 09:50 AM', startTime: '08:35', endTime: '09:50' },
+      { id: 'slot-2', period: 2, label: '09:50 AM - 11:05 AM', startTime: '09:50', endTime: '11:05' },
+      { id: 'slot-3', period: 3, label: '11:05 AM - 12:20 PM', startTime: '11:05', endTime: '12:20' },
+      { id: 'slot-4', period: 4, label: '12:20 PM - 01:35 PM', startTime: '12:20', endTime: '13:35' },
+      { id: 'slot-5', period: 5, label: '01:35 PM - 02:50 PM', startTime: '13:35', endTime: '14:50' },
+      { id: 'slot-6', period: 6, label: '02:50 PM - 04:05 PM', startTime: '14:50', endTime: '16:05' },
     ],
     reschedules: [],
   };
@@ -202,7 +203,7 @@ export async function getDatabase(): Promise<DatabaseFile> {
         .from('time_slots')
         .select('*')
         .order('period', { ascending: true });
-      if (!slotError && slotData && slotData.length > 0) {
+      if (!slotError && slotData && slotData.length >= fallback.timeSlots.length) {
         timeSlots = slotData.map((s: any) => ({
           id: s.id,
           period: s.period,
@@ -210,6 +211,21 @@ export async function getDatabase(): Promise<DatabaseFile> {
           startTime: s.start_time || s.startTime,
           endTime: s.end_time || s.endTime,
         }));
+      } else if (!slotError && fallback.timeSlots?.length > 0) {
+        // If Supabase has outdated or fewer slots, use latest 6 fallback slots and sync to Supabase
+        timeSlots = fallback.timeSlots;
+        try {
+          const syncPayload = fallback.timeSlots.map(s => ({
+            id: s.id,
+            period: s.period,
+            label: s.label,
+            start_time: s.startTime,
+            end_time: s.endTime,
+          }));
+          await supabase.from('time_slots').upsert(syncPayload, { onConflict: 'id' });
+        } catch {
+          // Graceful fallback if client does not have upsert permissions on time_slots
+        }
       }
 
       const reschedules: RescheduleBooking[] = rescData

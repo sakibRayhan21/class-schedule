@@ -94,18 +94,37 @@ INSERT INTO public.rooms (id, name) VALUES
   ('lab-308', 'Lab 308')
 ON CONFLICT (id) DO NOTHING;
 
--- 6. Insert the 5 Lecture Periods
+-- 6. Insert the 6 Lecture Periods
 INSERT INTO public.time_slots (id, period, label, start_time, end_time) VALUES
-  ('slot-1', 1, '08:30 AM - 09:50 AM', '08:30', '09:50'),
-  ('slot-2', 2, '09:50 AM - 11:10 AM', '09:50', '11:10'),
-  ('slot-3', 3, '11:10 AM - 12:30 PM', '11:10', '12:30'),
-  ('slot-4', 4, '01:50 PM - 03:10 PM', '13:50', '15:10'),
-  ('slot-5', 5, '03:10 PM - 04:30 PM', '15:10', '16:30')
-ON CONFLICT (id) DO NOTHING;
+  ('slot-1', 1, '08:35 AM - 09:50 AM', '08:35', '09:50'),
+  ('slot-2', 2, '09:50 AM - 11:05 AM', '09:50', '11:05'),
+  ('slot-3', 3, '11:05 AM - 12:20 PM', '11:05', '12:20'),
+  ('slot-4', 4, '12:20 PM - 01:35 PM', '12:20', '13:35'),
+  ('slot-5', 5, '01:35 PM - 02:50 PM', '13:35', '14:50'),
+  ('slot-6', 6, '02:50 PM - 04:05 PM', '14:50', '16:05')
+ON CONFLICT (id) DO UPDATE SET
+  period = EXCLUDED.period,
+  label = EXCLUDED.label,
+  start_time = EXCLUDED.start_time,
+  end_time = EXCLUDED.end_time;
 
 -- ========================================================
 -- 7. Schema Upgrades & Migrations
 -- Run this if upgrading an existing deployment:
 ALTER TABLE public.reschedules ADD COLUMN IF NOT EXISTS ip_address TEXT DEFAULT '';
+
+-- Update/Seed 6 Lecture Periods
+INSERT INTO public.time_slots (id, period, label, start_time, end_time) VALUES
+  ('slot-1', 1, '08:35 AM - 09:50 AM', '08:35', '09:50'),
+  ('slot-2', 2, '09:50 AM - 11:05 AM', '09:50', '11:05'),
+  ('slot-3', 3, '11:05 AM - 12:20 PM', '11:05', '12:20'),
+  ('slot-4', 4, '12:20 PM - 01:35 PM', '12:20', '13:35'),
+  ('slot-5', 5, '01:35 PM - 02:50 PM', '13:35', '14:50'),
+  ('slot-6', 6, '02:50 PM - 04:05 PM', '14:50', '16:05')
+ON CONFLICT (id) DO UPDATE SET
+  period = EXCLUDED.period,
+  label = EXCLUDED.label,
+  start_time = EXCLUDED.start_time,
+  end_time = EXCLUDED.end_time;
 -- ========================================================
 

@@ -20,6 +20,7 @@ import {
   Copy,
   LogOut,
   Lock,
+  Globe,
 } from 'lucide-react';
 import { Room, TimeSlot, RescheduleBooking, VALID_BATCHES, ValidBatch } from '@/lib/types';
 
@@ -308,6 +309,7 @@ export default function RescheduleHomePage() {
       setIsAdminModalOpen(false);
       setAdminPassword('');
       showToast('🛡️ Signed in as Department Admin (Centralized Control Active)');
+      fetchData();
     } catch {
       setAdminAuthError('Network error during admin sign in.');
     } finally {
@@ -320,6 +322,7 @@ export default function RescheduleHomePage() {
     await fetch('/api/auth', { method: 'DELETE' });
     setIsAdmin(false);
     showToast('Signed out of Admin Mode');
+    fetchData();
   };
 
   // Admin Change Password Handler
@@ -859,6 +862,17 @@ export default function RescheduleHomePage() {
                                       <span>{item.reason}</span>
                                     </p>
                                   )}
+                                  {isAdmin && item.ipAddress && (
+                                    <div className="pt-0.5 flex items-center gap-1.5">
+                                      <span
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200"
+                                        title={`Creator IP Address: ${item.ipAddress}`}
+                                      >
+                                        <Globe className="w-2.5 h-2.5 text-slate-400" />
+                                        <span>IP: {item.ipAddress}</span>
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </td>
 
@@ -962,6 +976,14 @@ export default function RescheduleHomePage() {
                             {item.reason && (
                               <div className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 italic">
                                 Note: {item.reason}
+                              </div>
+                            )}
+
+                            {/* Admin-only IP Display */}
+                            {isAdmin && item.ipAddress && (
+                              <div className="pt-1.5 flex items-center gap-1.5 text-[11px] font-mono text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                                <Globe className="w-3 h-3 text-slate-400" />
+                                <span>Creator IP: <strong>{item.ipAddress}</strong></span>
                               </div>
                             )}
                           </div>
@@ -1425,6 +1447,13 @@ export default function RescheduleHomePage() {
               <strong>{getRoomName(deleteTarget.roomId)}</strong> on{' '}
               <strong>{deleteTarget.date}</strong>?
             </p>
+
+            {isAdmin && deleteTarget.ipAddress && (
+              <div className="flex items-center gap-1.5 text-xs font-mono text-slate-700 bg-slate-100 p-2 rounded-xl border border-slate-200">
+                <Globe className="w-3.5 h-3.5 text-slate-400" />
+                <span>Created by IP: <strong>{deleteTarget.ipAddress}</strong></span>
+              </div>
+            )}
 
             {deleteError && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-xl font-medium">

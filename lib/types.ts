@@ -37,6 +37,7 @@ export interface RescheduleBooking {
   reason?: string;
   status: 'CONFIRMED' | 'CANCELLED';
   createdAt: string;
+  ipAddress?: string;
 }
 
 export interface DatabaseFile {

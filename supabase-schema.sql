@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS public.reschedules (
   passcode TEXT DEFAULT '',
   reason TEXT,
   status TEXT DEFAULT 'CONFIRMED',
+  ip_address TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -101,3 +102,10 @@ INSERT INTO public.time_slots (id, period, label, start_time, end_time) VALUES
   ('slot-4', 4, '01:50 PM - 03:10 PM', '13:50', '15:10'),
   ('slot-5', 5, '03:10 PM - 04:30 PM', '15:10', '16:30')
 ON CONFLICT (id) DO NOTHING;
+
+-- ========================================================
+-- 7. Schema Upgrades & Migrations
+-- Run this if upgrading an existing deployment:
+ALTER TABLE public.reschedules ADD COLUMN IF NOT EXISTS ip_address TEXT DEFAULT '';
+-- ========================================================
+

@@ -129,6 +129,7 @@ function mapSupabaseReschedule(row: any): RescheduleBooking {
     reason: row.reason || '',
     status: (row.status as 'CONFIRMED' | 'CANCELLED') || 'CONFIRMED',
     createdAt: row.created_at || new Date().toISOString(),
+    ipAddress: row.ip_address || row.ipAddress || '',
   };
 }
 
@@ -238,6 +239,7 @@ export async function addReschedule(data: {
   batch: string;
   passcode?: string;
   reason?: string;
+  ipAddress?: string;
 }): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
   const currentDb = await getDatabase();
 
@@ -305,25 +307,47 @@ export async function addReschedule(data: {
   // Save to Supabase if configured
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data: inserted, error: insertError } = await supabase
+      const insertPayload: any = {
+        id: newBookingId,
+        date: data.date,
+        slot_id: data.slotId,
+        room_id: data.roomId,
+        course_code: courseCodeFormatted,
+        course_title: courseTitleFormatted,
+        batch: data.batch,
+        passcode: passcodeFormatted,
+        reason: data.reason?.trim() || '',
+        status: 'CONFIRMED',
+      };
+      if (data.ipAddress) {
+        insertPayload.ip_address = data.ipAddress.trim();
+      }
+
+      let { data: inserted, error: insertError } = await supabase
         .from('reschedules')
-        .insert({
-          id: newBookingId,
-          date: data.date,
-          slot_id: data.slotId,
-          room_id: data.roomId,
-          course_code: courseCodeFormatted,
-          course_title: courseTitleFormatted,
-          batch: data.batch,
-          passcode: passcodeFormatted,
-          reason: data.reason?.trim() || '',
-          status: 'CONFIRMED',
-        })
+        .insert(insertPayload)
         .select()
         .single();
 
+      // Graceful fallback if table does not yet have ip_address column
+      if (insertError && data.ipAddress && insertError.message?.toLowerCase().includes('ip_address')) {
+        console.warn('Supabase reschedules table missing ip_address column, retrying without it:', insertError.message);
+        delete insertPayload.ip_address;
+        const retryResult = await supabase
+          .from('reschedules')
+          .insert(insertPayload)
+          .select()
+          .single();
+        inserted = retryResult.data;
+        insertError = retryResult.error;
+      }
+
       if (!insertError && inserted) {
-        return { success: true, booking: mapSupabaseReschedule(inserted) };
+        const mapped = mapSupabaseReschedule(inserted);
+        if (!mapped.ipAddress && data.ipAddress) {
+          mapped.ipAddress = data.ipAddress.trim();
+        }
+        return { success: true, booking: mapped };
       }
       console.warn('Supabase insert failed, falling back to local database:', insertError?.message);
     } catch (err: any) {
@@ -344,6 +368,7 @@ export async function addReschedule(data: {
     reason: data.reason?.trim() || '',
     status: 'CONFIRMED',
     createdAt: new Date().toISOString(),
+    ipAddress: data.ipAddress?.trim() || '',
   };
 
   currentDb.reschedules.push(newBooking);
@@ -363,6 +388,7 @@ export async function updateReschedule(data: {
   batch: string;
   passcode?: string;
   reason?: string;
+  ipAddress?: string;
 }): Promise<{ success: boolean; booking?: RescheduleBooking; error?: string }> {
   const currentDb = await getDatabase();
   const existing = currentDb.reschedules.find(r => r.id === data.id);
@@ -430,24 +456,45 @@ export async function updateReschedule(data: {
   // Update in Supabase
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data: updated, error: updateError } = await supabase
+      const updatePayload: any = {
+        date: data.date,
+        slot_id: data.slotId,
+        room_id: data.roomId,
+        course_code: courseCodeFormatted,
+        course_title: courseTitleFormatted,
+        batch: data.batch,
+        passcode: passcodeFormatted,
+        reason: data.reason?.trim() || '',
+      };
+      if (data.ipAddress) {
+        updatePayload.ip_address = data.ipAddress.trim();
+      }
+
+      let { data: updated, error: updateError } = await supabase
         .from('reschedules')
-        .update({
-          date: data.date,
-          slot_id: data.slotId,
-          room_id: data.roomId,
-          course_code: courseCodeFormatted,
-          course_title: courseTitleFormatted,
-          batch: data.batch,
-          passcode: passcodeFormatted,
-          reason: data.reason?.trim() || '',
-        })
+        .update(updatePayload)
         .eq('id', data.id)
         .select()
         .single();
 
+      if (updateError && data.ipAddress && updateError.message?.toLowerCase().includes('ip_address')) {
+        delete updatePayload.ip_address;
+        const retryResult = await supabase
+          .from('reschedules')
+          .update(updatePayload)
+          .eq('id', data.id)
+          .select()
+          .single();
+        updated = retryResult.data;
+        updateError = retryResult.error;
+      }
+
       if (!updateError && updated) {
-        return { success: true, booking: mapSupabaseReschedule(updated) };
+        const mapped = mapSupabaseReschedule(updated);
+        if (!mapped.ipAddress && data.ipAddress) {
+          mapped.ipAddress = data.ipAddress.trim();
+        }
+        return { success: true, booking: mapped };
       }
       console.warn('Supabase update failed, falling back to local database:', updateError?.message);
     } catch (err: any) {
@@ -468,6 +515,7 @@ export async function updateReschedule(data: {
       batch: data.batch,
       passcode: passcodeFormatted,
       reason: data.reason?.trim() || '',
+      ipAddress: data.ipAddress?.trim() || currentDb.reschedules[index].ipAddress || '',
     };
     saveLocalDatabase(currentDb);
     return { success: true, booking: currentDb.reschedules[index] };

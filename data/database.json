@@ -70,5 +70,62 @@
       "endTime": "16:30"
     }
   ],
-  "reschedules": []
+  "reschedules": [
+    {
+      "id": "resc-1793796656732-fx4x",
+      "date": "2026-11-05",
+      "slotId": "slot-4",
+      "roomId": "room-304",
+      "courseCode": "NISA MA'AM",
+      "courseTitle": "English",
+      "batch": "22-B",
+      "passcode": "admin123",
+      "reason": "Makeup Class",
+      "status": "CONFIRMED",
+      "createdAt": "2026-11-04T12:50:57.272479+00:00",
+      "ipAddress": ""
+    },
+    {
+      "id": "resc-1793800209885-scle",
+      "date": "2026-11-05",
+      "slotId": "slot-4",
+      "roomId": "lab-306",
+      "courseCode": "CSE 0613-2106",
+      "courseTitle": "Computer Algorithm Lab",
+      "batch": "20",
+      "passcode": "key-20",
+      "reason": "Makeup Class",
+      "status": "CONFIRMED",
+      "createdAt": "2026-11-04T13:50:10.454522+00:00",
+      "ipAddress": ""
+    },
+    {
+      "id": "resc-1793799970381-p4y9",
+      "date": "2026-11-10",
+      "slotId": "slot-2",
+      "roomId": "room-304",
+      "courseCode": "CSE 0232-1111",
+      "courseTitle": "Communicative English",
+      "batch": "22-A",
+      "passcode": "key-22-a",
+      "reason": "Makeup Class",
+      "status": "CONFIRMED",
+      "createdAt": "2026-11-04T13:46:10.954867+00:00",
+      "ipAddress": ""
+    },
+    {
+      "id": "resc-1793799893860-svwu",
+      "date": "2026-11-10",
+      "slotId": "slot-1",
+      "roomId": "room-304",
+      "courseCode": "CSE 0232-1111",
+      "courseTitle": "Communicative English",
+      "batch": "22-A",
+      "passcode": "key-22-A",
+      "reason": "1st and 2nd slot",
+      "status": "CONFIRMED",
+      "createdAt": "2026-11-04T13:44:53.993852+00:00",
+      "ipAddress": ""
+    }
+  ]
 }

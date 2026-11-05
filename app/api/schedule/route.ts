@@ -14,13 +14,37 @@ import { getAuthSession } from '@/lib/admin-auth';
 // Force dynamic execution on Vercel so data is never cached stale
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+function extractClientIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    const first = forwarded.split(',')[0].trim();
+    if (first) return first;
+  }
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp && realIp.trim()) return realIp.trim();
+  const cfConnectingIp = request.headers.get('cf-connecting-ip');
+  if (cfConnectingIp && cfConnectingIp.trim()) return cfConnectingIp.trim();
+  return '127.0.0.1';
+}
+
+export async function GET(request: Request) {
   try {
+    const session = getAuthSession(request);
+    const isAdmin = session?.role === 'admin';
+
     const db = await getDatabase();
+
+    // Privacy Protection: Only logged-in Admin can see creator IP addresses
+    const reschedules = db.reschedules.map(r => {
+      if (isAdmin) return r;
+      const { ipAddress, ...rest } = r;
+      return rest;
+    });
+
     return NextResponse.json({
       rooms: db.rooms || [],
       timeSlots: db.timeSlots || [],
-      reschedules: db.reschedules || [],
+      reschedules,
       batches: VALID_BATCHES,
     });
   } catch (error) {
@@ -32,6 +56,7 @@ export async function POST(request: Request) {
   try {
     const session = getAuthSession(request);
     const isAdmin = session?.role === 'admin';
+    const clientIp = extractClientIp(request);
 
     const body = await request.json();
     const { date, slotId, roomId, courseCode, courseTitle, batch, passcode, reason } = body;
@@ -62,6 +87,8 @@ export async function POST(request: Request) {
       }
     }
 
+    console.log(`[AUDIT] Booking submitted by IP: ${clientIp} for Batch: ${batch}, Course: ${courseCode}`);
+
     const result = await addReschedule({
       date,
       slotId,
@@ -71,6 +98,7 @@ export async function POST(request: Request) {
       batch,
       passcode: passcode?.trim() || '',
       reason,
+      ipAddress: clientIp,
     });
 
     if (!result.success) {
@@ -87,6 +115,7 @@ export async function PUT(request: Request) {
   try {
     const session = getAuthSession(request);
     const isAdmin = session?.role === 'admin';
+    const clientIp = extractClientIp(request);
 
     const body = await request.json();
     const { id, date, slotId, roomId, courseCode, courseTitle, batch, passcode, reason } = body;
@@ -123,6 +152,8 @@ export async function PUT(request: Request) {
       }
     }
 
+    console.log(`[AUDIT] Booking ${id} updated by IP: ${clientIp} for Batch: ${batch}`);
+
     const result = await updateReschedule({
       id,
       date,
@@ -133,6 +164,7 @@ export async function PUT(request: Request) {
       batch,
       passcode: passcode?.trim() || existing.passcode || '',
       reason,
+      ipAddress: clientIp,
     });
 
     if (!result.success) {
@@ -149,6 +181,7 @@ export async function DELETE(request: Request) {
   try {
     const session = getAuthSession(request);
     const isAdmin = session?.role === 'admin';
+    const clientIp = extractClientIp(request);
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
@@ -167,6 +200,7 @@ export async function DELETE(request: Request) {
         );
       }
 
+      console.log(`[AUDIT] Storage cleanup triggered by Admin IP: ${clientIp}`);
       const { deletedCount } = await cleanupPastReschedules();
       return NextResponse.json({ success: true, message: `Cleaned up ${deletedCount} past class records.` });
     }
@@ -202,6 +236,8 @@ export async function DELETE(request: Request) {
         );
       }
     }
+
+    console.log(`[AUDIT] Booking ${id} deleted by IP: ${clientIp}`);
 
     const result = await deleteReschedule(id, passcode || undefined);
     if (!result.success) {

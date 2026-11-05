@@ -8,15 +8,15 @@ const DB_PATH = path.join(DATA_DIR, 'database.json');
 
 // Default CR Secret Keys for the 9 department batches
 export const DEFAULT_BATCH_KEYS: Record<string, string> = {
-  '15': 'key-15',
-  '16': 'key-16',
-  '17': 'key-17',
-  '18': 'key-18',
-  '19': 'key-19',
-  '20': 'key-20',
-  '21': 'key-21',
-  '22-A': 'key-22a',
-  '22-B': 'key-22b',
+  '15': 'senior-15',
+  '16': 'boss-16',
+  '17': 'abdullah-17',
+  '18': 'crs-18',
+  '19': 'KR-1015',
+  '20': 'cr-20s',
+  '21': 'ARG-21',
+  '22-A': 'batch-22a',
+  '22-B': 'batch-22b',
 };
 
 // Validates whether the given key is authorized for the specified batch (or admin override)
@@ -38,10 +38,12 @@ export function verifyBatchKey(batch: string, key?: string | null): boolean {
   if (cleanKey === cleanDefault) return true;
 
   // Normalize batch and key (strip non-alphanumeric) to accept variations like:
-  // "key-22-a", "key22a", "22a", "key-22a"
+  // "senior15" vs "senior-15", "cr20s" vs "cr-20s", "arg21" vs "arg-21", "22a"
   const normBatch = batch.toLowerCase().replace(/[^a-z0-9]/g, '');
   const normKey = cleanKey.replace(/[^a-z0-9]/g, '');
-  if (normKey === `key${normBatch}` || normKey === normBatch) {
+  const normDefault = cleanDefault.replace(/[^a-z0-9]/g, '');
+
+  if (normKey === normDefault || normKey === `key${normBatch}` || normKey === normBatch) {
     return true;
   }
 

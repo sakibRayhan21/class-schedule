@@ -38,15 +38,15 @@ export const CR_ACCOUNTS: Record<ValidBatch, string> = {
 
 // Default passwords accepted for first-time sign in
 const DEFAULT_CR_PASSWORDS: Record<ValidBatch, string[]> = {
-  '15': ['cr123', 'key-15', 'cr-15', '15'],
-  '16': ['cr123', 'key-16', 'cr-16', '16'],
-  '17': ['cr123', 'key-17', 'cr-17', '17'],
-  '18': ['cr123', 'key-18', 'cr-18', '18'],
-  '19': ['cr123', 'KR-1015', 'cr-19', '19'],
-  '20': ['cr123', 'key-20', 'cr-20', '20'],
-  '21': ['cr123', 'key-21', 'cr-21', '21'],
-  '22-A': ['cr123', 'key-22a', 'cr-22a', 'cr22a', '22-a', '22a'],
-  '22-B': ['cr123', 'key-22b', 'cr-22b', 'cr22b', '22-b', '22b'],
+  '15': ['senior-15', 'cr123', 'key-15', 'cr-15', '15'],
+  '16': ['boss-16', 'cr123', 'key-16', 'cr-16', '16'],
+  '17': ['abdullah-17', 'cr123', 'key-17', 'cr-17', '17'],
+  '18': ['crs-18', 'cr123', 'key-18', 'cr-18', '18'],
+  '19': ['KR-1015', 'cr123', 'key-19', 'cr-19', '19'],
+  '20': ['cr-20s', 'cr123', 'key-20', 'cr-20', '20'],
+  '21': ['ARG-21', 'cr123', 'key-21', 'cr-21', '21'],
+  '22-A': ['batch-22a', 'cr123', 'key-22a', 'cr-22a', 'cr22a', '22-a', '22a'],
+  '22-B': ['batch-22b', 'cr123', 'key-22b', 'cr-22b', 'cr22b', '22-b', '22b'],
 };
 
 function hashPassword(password: string, salt = crypto.randomBytes(16).toString('hex')): string {

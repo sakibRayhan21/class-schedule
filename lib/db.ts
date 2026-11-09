@@ -86,7 +86,7 @@ function getLocalFallback(): DatabaseFile {
     rooms: [
       { id: 'room-301', name: 'Room 301' },
       { id: 'room-302', name: 'Room 302' },
-      { id: 'room-401', name: 'Room 401' },
+      { id: 'room-305', name: 'Room 305' },
       { id: 'room-303', name: 'Room 303' },
       { id: 'room-304', name: 'Room 304' },
       { id: 'lab-306', name: 'Lab 306' },
@@ -197,6 +197,15 @@ export async function getDatabase(): Promise<DatabaseFile> {
       const { data: roomData, error: roomError } = await supabase.from('rooms').select('*');
       if (!roomError && roomData && roomData.length > 0) {
         rooms = roomData.map((r: any) => ({ id: r.id, name: r.name }));
+        const missingRooms = fallback.rooms.filter(fr => !rooms.some(r => r.id === fr.id));
+        if (missingRooms.length > 0) {
+          rooms = [...rooms, ...missingRooms];
+          try {
+            await supabase.from('rooms').upsert(fallback.rooms, { onConflict: 'id' });
+          } catch {
+            // Graceful fallback
+          }
+        }
       }
 
       // 3. Fetch Time Slots if present in Supabase

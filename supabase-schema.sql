@@ -86,13 +86,13 @@ CREATE POLICY "Allow server write on cr_credentials" ON public.cr_credentials FO
 INSERT INTO public.rooms (id, name) VALUES
   ('room-301', 'Room 301'),
   ('room-302', 'Room 302'),
-  ('room-401', 'Room 401'),
+  ('room-305', 'Room 305'),
   ('room-303', 'Room 303'),
   ('room-304', 'Room 304'),
   ('lab-306', 'Lab 306'),
   ('lab-307', 'Lab 307'),
   ('lab-308', 'Lab 308')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
 -- 6. Insert the 6 Lecture Periods
 INSERT INTO public.time_slots (id, period, label, start_time, end_time) VALUES
@@ -112,6 +112,10 @@ ON CONFLICT (id) DO UPDATE SET
 -- 7. Schema Upgrades & Migrations
 -- Run this if upgrading an existing deployment:
 ALTER TABLE public.reschedules ADD COLUMN IF NOT EXISTS ip_address TEXT DEFAULT '';
+
+-- Update Room 305
+INSERT INTO public.rooms (id, name) VALUES ('room-305', 'Room 305')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
 -- Update/Seed 6 Lecture Periods
 INSERT INTO public.time_slots (id, period, label, start_time, end_time) VALUES
